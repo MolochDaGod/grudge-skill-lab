@@ -12,6 +12,8 @@
 import { sameWeaponFamily } from './weapons.js';
 import { deriveStats } from './grudgeMath.js';
 
+export { deriveStats };
+
 export const STAT_KEYS = [
   'strength',
   'vitality',

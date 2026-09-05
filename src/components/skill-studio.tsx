@@ -5,7 +5,9 @@ import { groveSkills, familyOf } from "@/lab/config/skillCatalog.js";
 import { ELEMENT_META } from "@/lab/config/settings.js";
 import {
   AURAS,
+  CAST_STAGES,
   CHARGE_ANIMS,
+  EFFECT_OPTIONS,
   FAMILIES,
   FROM_WHERE,
   IMPACTS,
@@ -15,11 +17,13 @@ import {
   TRAILS,
   applyRecipeToSettings,
   emptyRecipe,
+  emptyStage,
   exportRecipe,
   listSavedRecipes,
   parseIntent,
   recipeFor,
   saveRecipe,
+  saveRecipeAs,
 } from "@/lab/rpg/skillRecipe.js";
 
 type Skill = {
@@ -43,6 +47,7 @@ type Skill = {
 type Slot = { type: string; label: string; unlockTier?: number; skills: Skill[] };
 type Tree = { id: string; name: string; icon?: string; slots: Slot[] };
 type Shelf = "grove" | "saved" | "weapons";
+type StageId = "charge" | "cast" | "travel" | "impact" | "fade";
 
 type LabApp = {
   element?: string;
@@ -121,6 +126,7 @@ export function SkillStudio({ open, onClose }: { open: boolean; onClose: () => v
   const [query, setQuery] = useState("");
   const [family, setFamily] = useState("all");
   const [saved, setSaved] = useState<Skill[]>([]);
+  const [stageId, setStageId] = useState<StageId>("cast");
   const grove = useMemo(() => groveSkills() as Skill[], []);
 
   const refreshSaved = () => {
@@ -233,6 +239,33 @@ export function SkillStudio({ open, onClose }: { open: boolean; onClose: () => v
 
   const patch = (partial: Record<string, unknown>) => {
     setRecipe((prev) => ({ ...prev, ...partial }));
+  };
+
+  const patchStage = (partial: Record<string, unknown>) => {
+    const current = recipe.stages?.[stageId] || emptyStage();
+    patch({
+      stages: {
+        ...(recipe.stages || {}),
+        [stageId]: { ...emptyStage(), ...current, ...partial },
+      },
+    });
+  };
+
+  const saveNew = () => {
+    if (!skill) return;
+    const label = window.prompt("Name this VFX recipe", `${skill.name} variant`);
+    if (!label) return;
+    const id = saveRecipeAs(skill.id, {
+      ...recipe,
+      name: label,
+      labId: skill.labId,
+      weaponType: skill.weaponType,
+    }, label);
+    refreshSaved();
+    setShelf("saved");
+    setSkillId(id);
+    setNote(`Saved new recipe · ${label}`);
+    toast(`Saved ${label}`);
   };
 
   const apply = async (andTry = false, publish = false) => {
@@ -512,6 +545,54 @@ export function SkillStudio({ open, onClose }: { open: boolean; onClose: () => v
                 <span className="studio-hint">Fills knobs, family, and palette from that sentence.</span>
               </div>
 
+              <Field label="Cast stage — assign a grove effect">
+                <div className="studio-stages" role="tablist" aria-label="Cast stages">
+                  {CAST_STAGES.map((row) => {
+                    const id = row.id as StageId;
+                    const wired = recipe.stages?.[id]?.effect && recipe.stages[id].effect !== "none";
+                    return (
+                    <button
+                      key={id}
+                      type="button"
+                      role="tab"
+                      aria-selected={stageId === id}
+                      className={stageId === id ? "is-on" : undefined}
+                      onClick={() => setStageId(id)}
+                    >
+                      {row.label}
+                      {wired ? <i /> : null}
+                    </button>
+                    );
+                  })}
+                </div>
+              </Field>
+              <div className="studio-grid">
+                <Field label={`${CAST_STAGES.find((row) => row.id === stageId)?.label || "Stage"} effect`}>
+                  <Select
+                    value={recipe.stages?.[stageId]?.effect || "none"}
+                    onChange={(id) => patchStage({ effect: id })}
+                    options={EFFECT_OPTIONS}
+                  />
+                </Field>
+                <Field label="Stage trail">
+                  <Select
+                    value={recipe.stages?.[stageId]?.trail || "none"}
+                    onChange={(id) => patchStage({ trail: id })}
+                    options={TRAILS}
+                  />
+                </Field>
+                <Field label="Stage aura">
+                  <Select
+                    value={recipe.stages?.[stageId]?.aura || "none"}
+                    onChange={(id) => patchStage({ aura: id })}
+                    options={AURAS}
+                  />
+                </Field>
+              </div>
+              <p className="studio-hint">
+                Charge fires as you start the skill. Cast / travel / impact / fade play on that Ability phase.
+              </p>
+
               <div className="studio-grid">
                 <Field label="Family">
                   <Select
@@ -610,6 +691,9 @@ export function SkillStudio({ open, onClose }: { open: boolean; onClose: () => v
               <div className="studio-actions">
                 <button type="button" className="primary" onClick={() => void apply(false)}>
                   Apply
+                </button>
+                <button type="button" onClick={saveNew}>
+                  Save new
                 </button>
                 <button type="button" onClick={() => void apply(true)}>
                   Try in grove

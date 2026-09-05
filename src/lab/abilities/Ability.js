@@ -206,7 +206,9 @@ export class Ability {
     this.light = this.ctx.lights.acquire();
 
     this.group.visible = true;
+    this._stagePlayed = Object.create(null);
     this.onSpawn();
+    this.playStage('cast');
   }
 
   /** A point on the cast line. `s` is 0..1 along it. */
@@ -243,11 +245,13 @@ export class Ability {
       case AbilityPhase.TRAVEL: {
         const reachedEnd = this.advance(dt);
         this.onTravel(dt);
+        this.playStage('travel');
         this._updateLight(dt, 1);
         if (reachedEnd) {
           this.phase = AbilityPhase.IMPACT;
           this.impactTime = 0;
           this.onImpact();
+          this.playStage('impact');
         }
         break;
       }
@@ -268,6 +272,7 @@ export class Ability {
         this.fadeTime += dt;
         const t = saturate(this.fadeTime / this.fadeDuration);
         this.onFade(dt, 1 + t);
+        this.playStage('fade');
         this._updateLight(dt, (1 - t) * 0.35);
         if (t >= 1) this.phase = AbilityPhase.DONE;
         break;
@@ -295,6 +300,35 @@ export class Ability {
       dt
     );
     this.lightBoost = Math.max(0, this.lightBoost - this.lightBoost * 4.5 * dt - 0.5 * dt);
+  }
+
+  /**
+   * Play a Skill Studio stage: nested grove effect, trail burst, aura pulse.
+   * Each stage fires once per cast so travel/fade do not spam.
+   */
+  playStage(stageId) {
+    if (this._stagePlayed?.[stageId]) return;
+    const spec = this.config?.stages?.[stageId];
+    if (!spec) return;
+    const effect = spec.effect && spec.effect !== 'none' ? spec.effect : null;
+    const aura = spec.aura && spec.aura !== 'none' ? spec.aura : null;
+    const trail = spec.trail && spec.trail !== 'none' ? spec.trail : null;
+    if (!effect && !aura && !trail) return;
+    this._stagePlayed[stageId] = true;
+
+    if (aura && this.ctx.auras?.pulse) this.ctx.auras.pulse(aura, { silent: true, duration: 0.35 });
+
+    if (trail && this.ctx.wind) {
+      const palette =
+        trail === 'mist' ? 'heal' : trail === 'wind' ? 'green' : this.config.variant || 'red';
+      if (trail === 'mist') this.ctx.wind.emitMist(this.position, 10, { palette, time: this.age });
+      else this.ctx.wind.emitWind(this.position, this.direction, 12, { palette, speed: 5, time: this.age });
+    }
+
+    if (effect && effect !== this.element && this.ctx.abilities?.cast) {
+      const dist = Math.max(1.4, (this.length || 4) * (stageId === 'impact' ? 0.35 : 0.7));
+      this.ctx.abilities.cast(this.position, this.direction, dist, effect);
+    }
   }
 
   /** Return to the pool. Must leave the instance reusable. */

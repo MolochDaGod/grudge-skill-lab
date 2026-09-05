@@ -46,7 +46,8 @@ import {
   scaleCooldown,
   scaleAoe,
   regenRates,
-  clamp
+  clamp,
+  deriveStats
 } from './formulas.js';
 import { classFSkill } from './totems.js';
 

@@ -6,7 +6,7 @@
  * when the skill is wired in the grove.
  */
 
-import { settings, applySettings, CAST_ANIMATIONS } from '../config/settings.js';
+import { settings, applySettings, CAST_ANIMATIONS, ELEMENTS, ELEMENT_META } from '../config/settings.js';
 import { AURA_VARIANTS, applyAuraToBlock, paintSkillBlock } from './auras.js';
 
 export const RECIPE_STORE = 'grudge-lab.skill-recipes.v1';
@@ -79,6 +79,36 @@ export const PALETTES = AURA_VARIANTS.map((row) => ({
   accent: row.accent
 }));
 
+export const CAST_STAGES = [
+  { id: 'charge', label: 'Charge' },
+  { id: 'cast', label: 'Cast' },
+  { id: 'travel', label: 'Travel' },
+  { id: 'impact', label: 'Impact' },
+  { id: 'fade', label: 'Fade' }
+];
+
+export const EFFECT_OPTIONS = [
+  { id: 'none', label: 'None' },
+  ...ELEMENTS.map((id) => ({
+    id,
+    label: ELEMENT_META[id]?.label || id
+  }))
+];
+
+export function emptyStage() {
+  return { effect: 'none', trail: 'none', aura: 'none', anim: '' };
+}
+
+function emptyStages() {
+  return {
+    charge: emptyStage(),
+    cast: emptyStage(),
+    travel: emptyStage(),
+    impact: emptyStage(),
+    fade: emptyStage()
+  };
+}
+
 export function emptyRecipe() {
   return {
     intent: '',
@@ -95,7 +125,8 @@ export function emptyRecipe() {
     transform: '',
     variant: 'red',
     family: 'weapon',
-    bending: false
+    bending: false,
+    stages: emptyStages()
   };
 }
 
@@ -180,7 +211,29 @@ export function saveRecipe(skillId, recipe) {
 
 export function recipeFor(skillId) {
   const stored = loadRecipes()[skillId];
-  return stored ? { ...emptyRecipe(), ...stored } : emptyRecipe();
+  const base = emptyRecipe();
+  if (!stored) return base;
+  return {
+    ...base,
+    ...stored,
+    stages: { ...base.stages, ...(stored.stages || {}) }
+  };
+}
+
+export function saveRecipeAs(sourceId, recipe, name) {
+  const slug = String(name || recipe?.name || sourceId || 'skill')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 40);
+  const id = `${slug || 'skill'}-${Date.now().toString(36)}`;
+  saveRecipe(id, {
+    ...emptyRecipe(),
+    ...recipe,
+    name: name || recipe?.name || id,
+    sourceId
+  });
+  return id;
 }
 
 /**
@@ -239,6 +292,19 @@ export function applyRecipeToSettings(labId, recipe) {
   if (recipe.variant) paintSkillBlock(labId, recipe.variant);
   if (recipe.bending || recipe.family === 'bending') {
     applyAuraToBlock('fire', recipe.variant || settings.aura?.fire || 'red');
+  }
+  if (recipe.stages) {
+    applySettings({
+      [labId]: {
+        stages: {
+          charge: { ...emptyStage(), ...(recipe.stages.charge || {}) },
+          cast: { ...emptyStage(), ...(recipe.stages.cast || {}) },
+          travel: { ...emptyStage(), ...(recipe.stages.travel || {}) },
+          impact: { ...emptyStage(), ...(recipe.stages.impact || {}) },
+          fade: { ...emptyStage(), ...(recipe.stages.fade || {}) }
+        }
+      }
+    });
   }
   return true;
 }

@@ -173,6 +173,7 @@ export class App {
         this.editor.refresh();
       }
     });
+    this.abilities.ctx.auras = this.auras;
     this._dashCd = 0;
 
     /* ---- input & targeting ---- */
@@ -880,6 +881,13 @@ export class App {
       distance = Math.max(0.55, distance - close);
     }
 
+    const charge = settings[vfxId]?.stages?.charge;
+    if (charge?.effect && charge.effect !== 'none' && charge.effect !== vfxId) {
+      this.abilities.cast(origin, direction, Math.min(2.4, distance * 0.45), charge.effect);
+    }
+    if (charge?.aura && charge.aura !== 'none') {
+      this.auras.pulse(charge.aura, { silent: true, duration: 0.4 });
+    }
     this.abilities.cast(origin, direction, distance, vfxId);
     this.cooldowns.set(element, resolved.cooldown);
     const spec = totemSpec(vfxId);
