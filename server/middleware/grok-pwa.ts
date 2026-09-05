@@ -75,6 +75,7 @@ export default async function grokPwaMiddleware(
       headers: {
         "content-type": "application/manifest+json; charset=utf-8",
         "cache-control": "no-cache",
+        "Access-Control-Allow-Origin": "*",
       },
     });
   }

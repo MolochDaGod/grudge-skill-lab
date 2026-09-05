@@ -1,7 +1,8 @@
 // @ts-nocheck
 import { ELEMENT_META } from '../config/settings.js';
 import { ELEMENT_SIGILS } from '../ui/glyphs.js';
-import { RACES, CLASSES, FACTIONS, ITEMS, GEAR_SLOTS, itemsForSlot } from './actor.js';
+import { RACES, CLASSES, FACTIONS, ITEMS, itemsForSlot } from './catalog.js';
+import { GEAR_SLOTS } from './formulas.js';
 import { getWeapon, isPreferredWeapon, WEAPON_ORDER } from './weapons.js';
 import { attrSheetHtml, formatSecondary, takenPercent, dummyDefenseFor } from './grudgeMath.js';
 

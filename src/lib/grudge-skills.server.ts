@@ -25,8 +25,9 @@ let catalog: CatalogSkill[] = [];
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, PUT, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Methods": "GET, PUT, POST, OPTIONS, HEAD",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, X-Requested-With",
+  "Access-Control-Max-Age": "86400",
   "Cache-Control": "no-store",
 };
 

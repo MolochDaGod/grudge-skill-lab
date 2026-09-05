@@ -3,7 +3,8 @@ import { kitPayload } from "@/lib/grudge-kit";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, OPTIONS, HEAD",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
 };
 
 export const Route = createFileRoute("/api/v1/kit")({

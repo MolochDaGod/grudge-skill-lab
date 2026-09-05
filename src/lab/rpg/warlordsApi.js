@@ -237,18 +237,30 @@ export async function loadWarlordsSkills() {
     return { ...cached, trees, fromCache: true };
   }
 
-  const response = await fetch(WARLORDS_SKILLS_URL, { mode: 'cors' });
-  if (!response.ok) throw new Error(`Warlords skills ${response.status}`);
-  const data = await response.json();
-  const skills = flattenSkills(data);
-  const extracted = extractWeaponTrees(data);
-  const trees = extracted.length ? extracted : treesFromSkills(skills);
-  const meta = {
-    total: data.totalSkills || skills.length,
-    source: WARLORDS_SKILLS_URL
-  };
-  writeCache(skills, trees, meta);
-  return { skills, trees, meta, fromCache: false };
+  const sources = ['/api/v1/skills', WARLORDS_SKILLS_URL];
+  let lastError = null;
+  for (const url of sources) {
+    try {
+      const response = await fetch(url, { headers: { Accept: 'application/json' } });
+      if (!response.ok) {
+        lastError = new Error(`Warlords skills ${response.status}`);
+        continue;
+      }
+      const data = await response.json();
+      const skills = Array.isArray(data.skills) ? data.skills : flattenSkills(data);
+      const extracted = extractWeaponTrees(data);
+      const trees = extracted.length ? extracted : treesFromSkills(skills);
+      const meta = {
+        total: data.totalSkills || data.count || skills.length,
+        source: url
+      };
+      writeCache(skills, trees, meta);
+      return { skills, trees, meta, fromCache: false };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('Warlords skills failed');
 }
 
 export async function loadWeaponTrees() {

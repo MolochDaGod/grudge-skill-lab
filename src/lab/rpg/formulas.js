@@ -10,9 +10,11 @@
  */
 
 import { sameWeaponFamily } from './weapons.js';
-import { deriveStats } from './grudgeMath.js';
+import { deriveStats as foldAttributes } from './grudgeMath.js';
 
-export { deriveStats };
+export function deriveStats(attrRatings) {
+  return foldAttributes(attrRatings || {});
+}
 
 export const STAT_KEYS = [
   'strength',

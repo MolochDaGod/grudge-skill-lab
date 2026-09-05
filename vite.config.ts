@@ -193,6 +193,12 @@ export default defineConfig(({ command, isPreview }) => ({
     host: "127.0.0.1",
     port: 8081,
     strictPort: true,
+    cors: { origin: true },
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET,HEAD,PUT,POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+    },
   },
   resolve: {
     tsconfigPaths: true,

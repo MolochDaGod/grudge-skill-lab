@@ -46,10 +46,10 @@ import {
   scaleCooldown,
   scaleAoe,
   regenRates,
-  clamp,
-  deriveStats
+  clamp
 } from './formulas.js';
 import { classFSkill } from './totems.js';
+import { deriveStats } from './grudgeMath.js';
 
 function copyEquip(src) {
   const out = {};
