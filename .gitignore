@@ -1,0 +1,52 @@
+# deps / build
+node_modules/
+dist/
+.output/
+.tanstack/
+.nitro/
+.vercel/
+.vite/
+*.local
+
+# env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+
+# editor / os
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# grok / preview scratch
+.grok/
+artifacts/
+screenshots/
+attachments/
+*.zip
+*.mp4
+playwright-report/
+test-results/
+
+# duplicate / unused binaries (runtime kit lives in public/models)
+public/assets/
+public/models/valhalla/foliage.glb
+public/models/valhalla/frog.glb
+public/models/valhalla/human.glb
+public/models/valhalla/undead.glb
+public/models/valhalla/orc.glb
+public/models/valhalla/elf.glb
+public/models/valhalla/dwarf.glb
+public/models/valhalla/barbbear.glb
+public/models/totems/totem_tyr_t2.glb
+public/models/totems/totem_loki_t4.glb
+public/models/totems/totem_thor_t5.glb
+public/models/totems/totem_valhalla_t7.glb
+
+.project_id
+coverage/
+*.log
+npm-debug.log*

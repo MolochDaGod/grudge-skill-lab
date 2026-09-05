@@ -1,0 +1,36 @@
+{
+  "$schema": "weapon-skill-production-override",
+  "id": "staff_ice_nova",
+  "labId": "iceNova",
+  "weaponTypeId": "STAFF",
+  "note": "Ice Nova — freeze AOE, LinearAbilityExt far/zone cast",
+  "animRole": "cast",
+  "animClip": "cast3",
+  "hitFrameDelay": 0.4,
+  "castEffectId": "frost_wave",
+  "travelEffectId": "frost_line",
+  "impactEffectId": "ice_nova",
+  "element": "ice",
+  "delivery": "around_target",
+  "castShape": "zone",
+  "rangeM": 12,
+  "aoeM": 5.5,
+  "cooldownSec": 2.4,
+  "force": 4,
+  "knockbackMm": 40,
+  "knockupVy": 0.3,
+  "intensity": 1.15,
+  "statuses": [
+    { "id": "freeze", "durationSec": 2.5, "magnitude": 1 },
+    { "id": "slow", "durationSec": 1.5, "magnitude": 0.4 }
+  ],
+  "checklist": {
+    "catalogIdVerified": true,
+    "animClipVerified": true,
+    "vfxCastTravelImpact": true,
+    "physicsSI": true,
+    "statusesMapped": true,
+    "linearExtEditor": true,
+    "smokeCastingLab": true
+  }
+}

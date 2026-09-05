@@ -1,0 +1,27 @@
+{
+  "$schema": "weapon-skill-production-override",
+  "id": "t0_sword_quick_thrust",
+  "labId": "combo2",
+  "weaponTypeId": "SWORD",
+  "note": "T0 Quick Thrust — short-range poke, extended reach. ObjectStore SSOT.",
+  "animRole": "thrust",
+  "animClip": "combo2",
+  "hitFrameDelay": 0.12,
+  "castEffectId": "quick_thrust",
+  "travelEffectId": "thrust_dart",
+  "impactEffectId": "thrust_hit",
+  "element": "physical",
+  "delivery": "weapon",
+  "castShape": "line",
+  "rangeM": 4.4,
+  "aoeM": 0,
+  "cooldownSec": 3,
+  "force": 2,
+  "intensity": 1,
+  "statuses": [],
+  "checklist": {
+    "catalogIdVerified": true,
+    "animClipVerified": true,
+    "vfxCastTravelImpact": true
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "$schema": "weapon-skill-production-override",
+  "id": "pyre_crown",
+  "labId": "pyre",
+  "weaponTypeId": "STAFF",
+  "delivery": "around_target",
+  "castShape": "zone",
+  "animClip": "cast1",
+  "rangeM": 18,
+  "aoeM": 4.2,
+  "cooldownSec": 1.6,
+  "element": "fire",
+  "statuses": [{ "id": "burn", "durationSec": 2.2, "magnitude": 1 }]
+}

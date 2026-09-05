@@ -1,0 +1,29 @@
+{
+  "$schema": "weapon-skill-production-override",
+  "id": "t0_sword_practice_slash",
+  "labId": "combo1",
+  "weaponTypeId": "SWORD",
+  "note": "Cinder Slash — LinearAbilityExt line residual, Casting catalog id SSOT",
+  "animRole": "slash",
+  "animClip": "cast2",
+  "hitFrameDelay": 0.18,
+  "castEffectId": "cinder_slash",
+  "travelEffectId": "ember_ribbon",
+  "impactEffectId": "scorch_burst",
+  "element": "fire",
+  "delivery": "weapon",
+  "castShape": "line",
+  "rangeM": 9.5,
+  "aoeM": 0,
+  "cooldownSec": 0.85,
+  "force": 3,
+  "intensity": 1,
+  "statuses": [{ "id": "burn", "durationSec": 1.1, "magnitude": 0.6 }],
+  "checklist": {
+    "catalogIdVerified": true,
+    "animClipVerified": true,
+    "vfxCastTravelImpact": true,
+    "linearExtEditor": true,
+    "smokeCastingLab": true
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "$schema": "weapon-skill-production-override",
+  "id": "staff_fire_bolt",
+  "labId": "fireBolt",
+  "weaponTypeId": "STAFF",
+  "note": "Staff Fire Bolt — LinearAbilityExt linear projectile",
+  "animRole": "cast",
+  "animClip": "cast1",
+  "hitFrameDelay": 0.22,
+  "castEffectId": "fire_orb",
+  "travelEffectId": "ember_trail",
+  "impactEffectId": "fire_burst",
+  "element": "fire",
+  "delivery": "caster_to_target",
+  "castShape": "line",
+  "rangeM": 16,
+  "aoeM": 2.4,
+  "cooldownSec": 1.05,
+  "force": 4,
+  "intensity": 1.1,
+  "statuses": [{ "id": "burn", "durationSec": 1.8, "magnitude": 1 }],
+  "checklist": {
+    "catalogIdVerified": true,
+    "animClipVerified": true,
+    "vfxCastTravelImpact": true,
+    "linearExtEditor": true,
+    "smokeCastingLab": true
+  }
+}
