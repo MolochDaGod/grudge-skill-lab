@@ -44,6 +44,21 @@ declare module "@/lab/config/skillCatalog.js" {
     statuses: unknown[];
   }>;
   export const DELIVERY_GROUPS: Record<string, string[]>;
+  export function familyOf(id: string): string;
+  export function groveSkills(): Array<{
+    id: string;
+    name: string;
+    labId: string;
+    weaponType: string;
+    slot: string;
+    family: string;
+    delivery: string;
+    description: string;
+    key?: string;
+    accent?: string;
+    source: string;
+    wired: boolean;
+  }>;
   export function exportSkillPrefab(id: string): unknown;
   export function exportAllSkills(): unknown;
   export function importLabPayload(data: unknown): boolean;
