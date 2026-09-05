@@ -9,7 +9,7 @@ import {
   Quaternion,
   Vector3
 } from 'three';
-import { SkeletonUtils } from 'three/addons/utils/SkeletonUtils.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { LAYER, setLayerRecursive } from '../core/Layers.js';
 import {
   pickClip,
@@ -195,6 +195,15 @@ export class WorldProps {
     this.totems = [];
     this._totemCrown = new Vector3();
     this._dummyPos = new Vector3(RANGE_LAYOUT.boss.x, 0, RANGE_LAYOUT.boss.z);
+    this.physics = null;
+  }
+
+  attachPhysics(physics) {
+    this.physics = physics;
+    if (!physics?.ready) return;
+    for (const unit of this.units) {
+      physics.addCapsule(unit.id, unit.pos.x, unit.pos.z, unit.radius, unit.height);
+    }
   }
 
   get dummy() {
@@ -289,7 +298,7 @@ export class WorldProps {
   }
 
   _spawnUnit({ id, role, name, gltf, proto, x, z, height, yaw, radius, hpMul, tint = false, dot = 0 }) {
-    const root = SkeletonUtils.clone(proto);
+    const root = cloneSkinned(proto);
     prepareMesh(root);
     plant(root, x, z, height, yaw);
     prepareSkinned(root);
@@ -323,6 +332,7 @@ export class WorldProps {
       idle: library.idle
     };
     this.units.push(unit);
+    this.physics?.addCapsule(id, x, z, radius, height);
     return unit;
   }
 

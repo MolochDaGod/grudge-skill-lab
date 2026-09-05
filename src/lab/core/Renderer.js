@@ -40,12 +40,23 @@ export class Renderer {
 
     this.gl.info.autoReset = false;
 
+    this._dprCap = 1.75;
     this._onResize = null;
   }
 
   /** Cap the pixel ratio: 4K + heavy transparency is not worth the fill rate. */
   targetPixelRatio() {
-    return Math.min(window.devicePixelRatio || 1, 1.75);
+    return Math.min(window.devicePixelRatio || 1, this._dprCap ?? 1.75);
+  }
+
+  /**
+   * detect-gpu tier: 0–1 low (cap 1, no shadows), 2 mid, 3 high.
+   */
+  applyTier(tier) {
+    const level = Number(tier) || 0;
+    this._dprCap = level <= 1 ? 1 : level === 2 ? 1.35 : 1.75;
+    if (level <= 1) this.gl.shadowMap.enabled = false;
+    this.gl.setPixelRatio(this.targetPixelRatio());
   }
 
   get domElement() {

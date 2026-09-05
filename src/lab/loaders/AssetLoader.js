@@ -3,6 +3,9 @@ import { LoadingManager, TextureLoader } from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 
 /**
  * A 1×1 opaque white PNG.
@@ -40,8 +43,8 @@ function isUnresolvable(url) {
 /**
  * Central asset loading with a single progress stream.
  *
- * Every loader shares one LoadingManager so the boot screen can report real
- * aggregate progress instead of guessing.
+ * Production GLBs may ship Draco, Meshopt, or KTX2. Decoders are self-hosted
+ * under /draco/gltf and /basis so a CDN outage cannot break the grove.
  */
 export class AssetLoader {
   constructor() {
@@ -54,6 +57,13 @@ export class AssetLoader {
     this.gltf = new GLTFLoader(this.manager);
     this.hdr = new HDRLoader(this.manager);
     this.texture = new TextureLoader(this.manager);
+    this.draco = new DRACOLoader(this.manager);
+    this.draco.setDecoderPath('/draco/gltf/');
+    this.ktx2 = new KTX2Loader(this.manager);
+    this.ktx2.setTranscoderPath('/basis/');
+    this.gltf.setDRACOLoader(this.draco);
+    this.gltf.setKTX2Loader(this.ktx2);
+    this.gltf.setMeshoptDecoder(MeshoptDecoder);
 
     this._onProgress = null;
     this._loaded = 0;
@@ -78,6 +88,18 @@ export class AssetLoader {
 
   onProgress(callback) {
     this._onProgress = callback;
+  }
+
+  /**
+   * KTX2 needs the live WebGL renderer to pick a GPU-compressed target.
+   * Call once after the renderer exists, before the first compressed GLB.
+   */
+  attachRenderer(renderer) {
+    try {
+      this.ktx2?.detectSupport(renderer);
+    } catch (error) {
+      console.warn('[AssetLoader] KTX2 detectSupport failed', error);
+    }
   }
 
   /**
@@ -109,9 +131,7 @@ export class AssetLoader {
   /**
    * Load a glTF/GLB.
    *
-   * Unlike the FBX path this needs no help from the URL modifier: a GLB carries
-   * its images inline as buffer views, so there are no authoring-machine paths
-   * to redirect and no extensionless names to stand in for.
+   * Draco / Meshopt / KTX2 extensions are decoded by the loaders attached above.
    *
    * @returns {Promise<{scene: THREE.Group, animations: THREE.AnimationClip[]}>}
    */
@@ -133,5 +153,10 @@ export class AssetLoader {
     return new Promise((resolve, reject) => {
       this.hdr.load(encodeURI(url), resolve, undefined, reject);
     });
+  }
+
+  dispose() {
+    this.draco?.dispose();
+    this.ktx2?.dispose();
   }
 }

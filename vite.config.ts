@@ -206,7 +206,7 @@ export default defineConfig(({ command, isPreview }) => ({
   },
   assetsInclude: ["**/*.wasm"],
   optimizeDeps: {
-    include: ["three", "@react-three/fiber", "@react-three/drei", "@react-three/rapier"],
+    include: ["three", "@react-three/fiber", "@react-three/drei", "@react-three/rapier", "detect-gpu"],
     exclude: ["@dimforge/rapier3d-compat"],
   },
   ssr: {

@@ -45,6 +45,7 @@ import { LibraryPanel } from '../ui/LibraryPanel.js';
 import { settings, ELEMENTS, CastShape } from '../config/settings.js';
 import { RACE_MESHES } from '../config/library.js';
 import { Actor } from '../rpg/actor.js';
+import { RapierWorld } from '../physics/RapierWorld.js';
 import { loadSave, persistActor, bindAutosave, schedulePersist } from '../rpg/save.js';
 import { RpgHud } from '../rpg/RpgHud.js';
 import { resolveCastHit, resolveCastHits, dummyHpFor } from '../rpg/combat.js';
@@ -113,6 +114,7 @@ export class App {
     this.scene.add(this.ground.mesh, this.dust.points, this.contactShadows.group);
 
     this.world = new WorldProps(this.scene);
+    this.physics = new RapierWorld();
     this.dust.setPixelRatio(this.renderer.gl.getPixelRatio());
 
     /* ---- shared VFX services ---- */
@@ -1026,6 +1028,20 @@ export class App {
   async load() {
     const assets = new AssetLoader();
     this.assets = assets;
+    assets.attachRenderer(this.renderer.gl);
+
+    try {
+      const { getGPUTier } = await import('detect-gpu');
+      const gpu = await getGPUTier();
+      this.renderer.applyTier(gpu.tier);
+    } catch {
+      /* keep the default DPR cap */
+    }
+
+    this.loading.setProgress(0.04, 'Physics…');
+    const physicsReady = this.physics.init().catch((error) => {
+      console.warn('[lab] Rapier init skipped', error);
+    });
 
     this.loading.setProgress(0.05, 'Loading environment…');
     const hdr = await assets.loadHDR(HDR_URL);
@@ -1047,7 +1063,8 @@ export class App {
       this.actor.classId,
       this.actor.weaponType
     );
-    await Promise.all([grove, avatar]);
+    await Promise.all([grove, avatar, physicsReady]);
+    this.world.attachPhysics(this.physics);
     const kit = await loadTotemKit(assets);
     this.abilities.ctx.totemKit = kit;
     this.world.setDummyMax(dummyHpFor(this.actor.level));
@@ -1188,15 +1205,11 @@ export class App {
 
   start() {
     this.time.reset();
-    const loop = () => {
-      this._raf = requestAnimationFrame(loop);
-      this.frame();
-    };
-    this._raf = requestAnimationFrame(loop);
+    this.renderer.gl.setAnimationLoop(() => this.frame());
   }
 
   stop() {
-    cancelAnimationFrame(this._raf);
+    this.renderer.gl.setAnimationLoop(null);
   }
 
   /* ------------------------------------------------------------------ */
@@ -1243,6 +1256,9 @@ export class App {
       this.character.turnToward(this.aim.facing, settings.character.turnRate, raw);
     }
     this.character.update(dt);
+    this.physics?.syncPlayer(this.character.position);
+    this.physics?.step(dt);
+    this.world.update(dt, this.character.position);
     if (this._charge.active) {
       this.character.getBoneWorld('RightHand', this._chargeTip);
       this._chargeTip.x += this.aim.direction.x * 0.28;
@@ -1252,7 +1268,6 @@ export class App {
     } else if (this.bowCharge.active) {
       this.bowCharge.stop();
     }
-    this.world.update(dt, this.character.position);
     this.actor.regen(dt);
 
     for (const [element, remaining] of this.cooldowns) {
@@ -1388,6 +1403,8 @@ export class App {
     this.lights.dispose();
     this.character.dispose();
     this.world.dispose();
+    this.physics?.dispose();
+    this.assets?.dispose();
     this.rpgHud?.dispose();
     this.library?.dispose();
     window.removeEventListener('lab:toggleLibrary', this._onLibEvent);
