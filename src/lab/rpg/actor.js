@@ -49,7 +49,7 @@ import {
   clamp
 } from './formulas.js';
 import { classFSkill } from './totems.js';
-import { deriveStats } from './grudgeMath.js';
+import { deriveStats, allocationSpent, pointsBudget, ALLOCATION } from './grudgeMath.js';
 
 function copyEquip(src) {
   const out = {};
