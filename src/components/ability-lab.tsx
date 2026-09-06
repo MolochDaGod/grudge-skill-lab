@@ -7,32 +7,37 @@ type LabApp = {
   editor: { toggle: () => void };
 };
 
-type LabModule = { App: new (canvas: HTMLCanvasElement, options?: object) => LabApp };
+type AppCtor = new (canvas: HTMLCanvasElement, options?: object) => LabApp;
 
-/**
- * Chrome caches a *failed* dynamic import forever for that URL. After a live
- * reload drops App.js mid-fetch, `import("@/lab/core/App.js")` keeps throwing
- * "Failed to fetch dynamically imported module" until we change the URL or
- * reload the page.
- */
-async function importLabModule(): Promise<LabModule> {
+function engineSrc() {
   try {
-    return (await import("@/lab/core/App.js")) as LabModule;
-  } catch (error) {
-    if (!import.meta.env.DEV) throw error;
-    await new Promise((resolve) => setTimeout(resolve, 350));
-    return (await import(/* @vite-ignore */ `/src/lab/core/App.js?t=${Date.now()}`)) as LabModule;
+    return new URL("../lab/boot-export.js", import.meta.url).href;
+  } catch {
+    return "/src/lab/boot-export.js";
   }
 }
 
-let labModule: Promise<LabModule> | null = null;
+/**
+ * Load the grove constructor without `import()`. Chrome caches a failed
+ * dynamic import for the life of the tab; a cache-busted module script does not.
+ */
+function loadAppCtor(): Promise<AppCtor> {
+  const existing = (window as unknown as { GrudgeLabApp?: AppCtor }).GrudgeLabApp;
+  if (existing) return Promise.resolve(existing);
 
-function labEngine(): Promise<LabModule> {
-  labModule ??= importLabModule().catch((error) => {
-    labModule = null;
-    throw error;
+  return new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.type = "module";
+    const src = engineSrc();
+    script.src = `${src}${src.includes("?") ? "&" : "?"}t=${Date.now()}`;
+    script.onload = () => {
+      const ctor = (window as unknown as { GrudgeLabApp?: AppCtor }).GrudgeLabApp;
+      if (!ctor) reject(new Error("Grove engine loaded without App"));
+      else resolve(ctor);
+    };
+    script.onerror = () => reject(new Error("Grove engine failed to load"));
+    document.head.appendChild(script);
   });
-  return labModule;
 }
 
 export function AbilityLab() {
@@ -40,16 +45,8 @@ export function AbilityLab() {
   const hudRef = useRef<HTMLDivElement>(null);
   const loaderRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<LabApp | null>(null);
-  const [entered, setEntered] = useState(false);
   const [studio, setStudio] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
-  const [retryTick, setRetryTick] = useState(0);
-
-  useEffect(() => {
-    void labEngine().catch(() => {
-      /* preload only — boot() surfaces the error */
-    });
-  }, []);
 
   const boot = useCallback(async () => {
     const canvas = canvasRef.current;
@@ -58,31 +55,27 @@ export function AbilityLab() {
     if (!canvas || !hud || !loader) return;
     try {
       setBootError(null);
-      const { App } = await labEngine();
-      const existing = (window as unknown as { __grudgeApp?: LabApp }).__grudgeApp;
-      if (existing) {
-        appRef.current = existing;
+      const held = (window as unknown as { __grudgeApp?: LabApp }).__grudgeApp;
+      if (held) {
+        appRef.current = held;
         loader.classList.add("is-hidden");
         return;
       }
+      const App = await loadAppCtor();
       const app = new App(canvas, { hud, loader }) as LabApp;
       appRef.current = app;
-      (window as unknown as { app: LabApp; __grudgeApp: LabApp }).app = app;
-      (window as unknown as { __grudgeApp: LabApp }).__grudgeApp = app;
+      const bag = window as unknown as { app: LabApp; __grudgeApp: LabApp };
+      bag.app = app;
+      bag.__grudgeApp = app;
       await app.load();
     } catch (error) {
       const raw = error instanceof Error ? error.message : "Failed to start the lab";
-      const dropped = /failed to fetch dynamically imported module/i.test(raw);
-      const message = dropped
-        ? "The grove engine dropped during a live reload. Hit Retry."
-        : raw;
-      setBootError(message);
+      setBootError(raw);
       console.error("[lab] boot failed", error);
     }
   }, []);
 
   useEffect(() => {
-    if (!entered) return;
     let cancelled = false;
     void (async () => {
       if (cancelled) return;
@@ -90,20 +83,19 @@ export function AbilityLab() {
     })();
     return () => {
       cancelled = true;
-      // Keep the WebGL grove across React refresh. Disposing here is what
-      // leaves the canvas dead and the next import() stuck on a failed module.
       if (import.meta.hot) return;
       appRef.current?.dispose();
       appRef.current = null;
       delete (window as unknown as { __grudgeApp?: LabApp }).__grudgeApp;
     };
-  }, [entered, boot, retryTick]);
+  }, [boot]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.repeat) return;
       const target = event.target as HTMLElement | null;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) return;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT"))
+        return;
       if (event.code === "KeyU") {
         event.preventDefault();
         setStudio((open) => !open);
@@ -118,24 +110,11 @@ export function AbilityLab() {
     };
   }, []);
 
-  const retry = () => {
-    labModule = null;
-    delete (window as unknown as { __grudgeApp?: LabApp }).__grudgeApp;
-    try {
-      appRef.current?.dispose();
-    } catch {
-      /* already torn down */
-    }
-    appRef.current = null;
-    setBootError(null);
-    setRetryTick((n) => n + 1);
-  };
-
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-bg text-fg">
       <canvas id="viewport" ref={canvasRef} />
 
-      <div id="loader" className={entered ? "loader" : "loader is-hidden"} ref={loaderRef}>
+      <div id="loader" className="loader" ref={loaderRef}>
         <div className="loader__inner">
           <img className="brand-helm" src="/brand/helmet.png" alt="" />
           <img className="brand-wordmark" src="/brand/logo.png" alt="Grudge" />
@@ -148,11 +127,8 @@ export function AbilityLab() {
           </p>
           {bootError ? (
             <div className="loader__retry">
-              <button type="button" className="lab-gate__enter" onClick={retry}>
-                Retry
-              </button>
-              <button type="button" className="studio-toggle" onClick={() => window.location.reload()}>
-                Reload
+              <button type="button" className="lab-gate__enter" onClick={() => window.location.reload()}>
+                Reload grove
               </button>
             </div>
           ) : null}
@@ -161,76 +137,36 @@ export function AbilityLab() {
 
       <div id="hud" className="hud" aria-live="polite" ref={hudRef} />
 
-      {entered ? (
-        <>
-          <div className="lab-tools">
-            <button
-              type="button"
-              className="studio-toggle"
-              onClick={() => window.dispatchEvent(new Event("lab:toggleLibrary"))}
-            >
-              Library
-            </button>
-            <button type="button" className="studio-toggle" onClick={() => setStudio((v) => !v)}>
-              Studio
-            </button>
-            <button
-              type="button"
-              className="studio-toggle"
-              onClick={() =>
-                (window as unknown as { app?: { scriptPanel?: { toggle: () => void } } }).app?.scriptPanel?.toggle()
-              }
-            >
-              Scripts
-            </button>
-            <button
-              type="button"
-              className="brand-settings"
-              title="Settings (G)"
-              onClick={() => window.dispatchEvent(new Event("lab:toggleEditor"))}
-            >
-              <img src="/brand/settings.png" alt="Settings" />
-            </button>
-          </div>
-          <SkillStudio open={studio} onClose={() => setStudio(false)} />
-        </>
-      ) : (
-        <div className="lab-gate">
-          <div className="lab-gate__card">
-            <img className="brand-helm" src="/brand/helmet.png" alt="" />
-            <img className="brand-wordmark" src="/brand/logo.png" alt="Grudge" />
-            <p className="lab-gate__kicker">Ability Lab</p>
-            <p className="lab-gate__lead">
-              Crusade, Fabled, Legion. Six race kits, eight Warlord classes.
-              1–3 is that weapon's own combo — not a shared 2H take. Pack is right-click to wear.
-            </p>
-            <div className="lab-gate__keys">
-              <div>
-                <b>WASD</b> walk the grove
-              </div>
-              <div>
-                <b>1–3</b> weapon combo
-              </div>
-              <div>
-                <b>I</b> races · Warlord classes
-              </div>
-              <div>
-                <b>RMB</b> wear from the pack
-              </div>
-              <div>
-                <b>L</b> clip · effect · editor library
-              </div>
-              <div>
-                <b>G U</b> VFX editor · studio
-              </div>
-            </div>
-            <button type="button" className="lab-gate__enter" onClick={() => setEntered(true)}>
-              Enter the lab
-            </button>
-            <p className="lab-gate__hint">WASD to walk. Aim with the mouse. Left click to cast. Right drag to orbit.</p>
-          </div>
-        </div>
-      )}
+      <div className="lab-tools">
+        <button
+          type="button"
+          className="studio-toggle"
+          onClick={() => window.dispatchEvent(new Event("lab:toggleLibrary"))}
+        >
+          Library
+        </button>
+        <button type="button" className="studio-toggle" onClick={() => setStudio((v) => !v)}>
+          Studio
+        </button>
+        <button
+          type="button"
+          className="studio-toggle"
+          onClick={() =>
+            (window as unknown as { app?: { scriptPanel?: { toggle: () => void } } }).app?.scriptPanel?.toggle()
+          }
+        >
+          Scripts
+        </button>
+        <button
+          type="button"
+          className="brand-settings"
+          title="Settings (G)"
+          onClick={() => window.dispatchEvent(new Event("lab:toggleEditor"))}
+        >
+          <img src="/brand/settings.png" alt="Settings" />
+        </button>
+      </div>
+      <SkillStudio open={studio} onClose={() => setStudio(false)} />
     </main>
   );
 }

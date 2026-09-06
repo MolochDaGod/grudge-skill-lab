@@ -40,6 +40,13 @@ function isUnresolvable(url) {
   return ABSOLUTE_LOCAL_PATH.test(url) || !HAS_EXTENSION.test(url);
 }
 
+/** Encode once. Callers that already percent-encode must not be encoded again. */
+function hrefFor(url) {
+  if (!url || url.startsWith('data:') || url.startsWith('blob:')) return url;
+  if (/%[0-9A-Fa-f]{2}/.test(url)) return url;
+  return encodeURI(url);
+}
+
 /**
  * Central asset loading with a single progress stream.
  *
@@ -118,7 +125,7 @@ export class AssetLoader {
   loadFBX(url) {
     return new Promise((resolve, reject) => {
       this.fbx.load(
-        encodeURI(url),
+        hrefFor(url),
         resolve,
         (event) => {
           if (event.lengthComputable) this._onProgress?.(event.loaded / event.total, url);
@@ -137,21 +144,21 @@ export class AssetLoader {
    */
   loadGLTF(url) {
     return new Promise((resolve, reject) => {
-      this.gltf.load(encodeURI(url), resolve, undefined, reject);
+      this.gltf.load(hrefFor(url), resolve, undefined, reject);
     });
   }
 
   /** @returns {Promise<THREE.Texture>} */
   loadTexture(url) {
     return new Promise((resolve, reject) => {
-      this.texture.load(encodeURI(url), resolve, undefined, reject);
+      this.texture.load(hrefFor(url), resolve, undefined, reject);
     });
   }
 
   /** @returns {Promise<THREE.DataTexture>} */
   loadHDR(url) {
     return new Promise((resolve, reject) => {
-      this.hdr.load(encodeURI(url), resolve, undefined, reject);
+      this.hdr.load(hrefFor(url), resolve, undefined, reject);
     });
   }
 
