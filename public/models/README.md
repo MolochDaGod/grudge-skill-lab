@@ -5,7 +5,8 @@ Git holds only meshes the lab actually loads.
 | Path | Use |
 | --- | --- |
 | `warlords/*.glb` | 6 race play bodies |
-| `valhalla/human.glb` | Worge bear clip source (walk / idle) |
+| `warlords/anims/*.glb` | Official Bip001 idle / walk / attack |
+| `valhalla/human.glb` | Worge bear grove NPC (not a player body) |
 | `valhalla/dummy.glb` | Combat range dummy |
 | `valhalla/attackcombo.glb` | Combo fallback |
 | `totems/totem_nordin_t0.glb` `totem_nordin_t1.glb` | Mage / virtuoso F |

@@ -9,6 +9,13 @@ export const COMBO_URL = '/models/valhalla/attackcombo.glb';
 export const COMBO_CDN = 'https://assets.grudge-studio.com/models/animations';
 export const COMBO_SKILLS = ['combo1', 'combo2', 'combo3'];
 
+/** Official Toon-RTS Bip001 takes — same skeleton as warlords/{race}.glb. */
+export const BIP_ANIM_PACKS = {
+  idle: '/models/warlords/anims/idle.glb',
+  walk: '/models/warlords/anims/walk.glb',
+  attack: '/models/warlords/anims/attack.glb'
+};
+
 /** Fallback windows for the local 2H Attack Combo (~6.9 s). */
 export const COMBO_WINDOWS = [
   { id: 'combo1', start: 0.04, end: 2.26 },
@@ -140,12 +147,81 @@ function stripBoneSuffix(name) {
     .replace(/_\d+$/, '');
 }
 
+export function isMixamoClip(clip) {
+  return Boolean(clip?.tracks?.some((track) => /mixamo/i.test(track.name)));
+}
+
+export function isBipClip(clip) {
+  return Boolean(
+    clip?.tracks?.some((track) => /^Bip001/i.test(String(track.name).split('.')[0] || ''))
+  );
+}
+
+function matchBipNode(node, boneSet) {
+  if (!node || /mixamo|rootjoint|sketchfab|warbear/i.test(node)) return null;
+  if (boneSet.has(node)) return node;
+  const spaced = node.replace(/_/g, ' ');
+  if (boneSet.has(spaced)) return spaced;
+  const underscored = node.replace(/\s+/g, '_');
+  if (boneSet.has(underscored)) return underscored;
+  const want = normBone(node);
+  for (const bone of boneSet) {
+    if (normBone(bone) === want) return bone;
+  }
+  return null;
+}
+
+/**
+ * Bind a Toon-RTS / Bip001 clip onto a Warlords race kit.
+ *
+ * Official packs use `Bip001_L_Foot`; kits use `Bip001 L Foot`. That is a
+ * spelling difference on the same skeleton — not a retarget. Mixamo and the
+ * warbear (`Bip001 L Foot_010`, different bind pose) are refused: those takes
+ * twist the mesh.
+ *
+ * Scale tracks are dropped so Bip001's authored 2.54 bind scale stays put.
+ * Translation tracks are dropped too — the packs are authored in Max cm, the
+ * kits already carry bone length in local bind pose. Applying those positions
+ * stretches a 1.8 m Warlord into a 70 m scarecrow. Root `Bip001` stays with
+ * plant() + facing.
+ */
+export function bindBipClip(clip, boneSet) {
+  if (!clip?.tracks?.length || !boneSet?.size) return clip;
+  if (isMixamoClip(clip) || !isBipClip(clip)) {
+    const empty = clip.clone();
+    empty.tracks = [];
+    empty.name = clip.name;
+    return empty;
+  }
+  const next = clip.clone();
+  next.name = clip.name;
+  next.tracks = next.tracks
+    .map((track) => {
+      const dot = track.name.lastIndexOf('.');
+      if (dot < 0) return null;
+      const node = track.name.slice(0, dot);
+      const prop = track.name.slice(dot + 1);
+      if (prop === 'scale' || prop === 'position') return null;
+      if (node === 'Bip001' || node === 'Bip001_05') return null;
+      const remapped = matchBipNode(node, boneSet);
+      if (!remapped) return null;
+      track.name = `${remapped}.${prop}`;
+      return track;
+    })
+    .filter(Boolean);
+  next.resetDuration?.();
+  return next;
+}
+
 /**
  * Bind a clip onto a live rig. Warbear takes use `Bip001 L Foot_010`;
  * Warlords race kits use `Bip001 L Foot`. Mixamo uses `mixamorigLeftFoot`.
+ * Prefer `bindBipClip` for player bodies — this helper still exists for the
+ * Mixamo fallback caster.
  */
 export function retargetClip(clip, boneSet, mode = 'bip') {
   if (!clip?.tracks?.length || !boneSet?.size) return clip;
+  if (mode === 'bip' && (isMixamoClip(clip) || !isBipClip(clip))) return clip;
   const next = clip.clone();
   next.name = clip.name;
   next.tracks = next.tracks

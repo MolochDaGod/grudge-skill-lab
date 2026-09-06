@@ -448,11 +448,12 @@ export class CharacterController {
     if (weaponType) this._weaponType = weaponType;
     const id = canonicalWeapon(this._weaponType);
     const pack = this._comboPacks.get(id) || this._comboPacks.get('SWORD');
-    if (!pack?.clips?.length) {
+    if (this.usingAvatar) {
       this.avatar?.bindCombo?.(id);
       return pack?.label || id;
     }
-    if (!this.usingAvatar && this.mixer) {
+    if (!pack?.clips?.length) return pack?.label || id;
+    if (this.mixer) {
       for (const clip of pack.clips) {
         const action = this.mixer.clipAction(clip);
         action.setLoop(LoopOnce, 1);
@@ -461,7 +462,6 @@ export class CharacterController {
         this.casts.set(clip.name, action);
       }
     }
-    this.avatar?.bindCombo?.(id, pack);
     return pack.label || id;
   }
 
@@ -1004,7 +1004,7 @@ export class CharacterController {
       }
     });
     const walk = this.usingAvatar
-      ? Boolean(this.avatar?.casts?.get('warbear_move') || this.avatar?.casts?.get('walk'))
+      ? Boolean(this.avatar?.casts?.get('walk'))
       : Boolean(this.casts?.has('walk'));
     return {
       bones,

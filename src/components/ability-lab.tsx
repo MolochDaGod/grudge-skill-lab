@@ -9,6 +9,8 @@ type LabApp = {
 
 type AppCtor = new (canvas: HTMLCanvasElement, options?: object) => LabApp;
 
+const GROVE_BODY_REV = "bip-pack-v3";
+
 function engineSrc() {
   try {
     return new URL("../lab/boot-export.js", import.meta.url).href;
@@ -55,18 +57,28 @@ export function AbilityLab() {
     if (!canvas || !hud || !loader) return;
     try {
       setBootError(null);
-      const held = (window as unknown as { __grudgeApp?: LabApp }).__grudgeApp;
-      if (held) {
+      const bag = window as unknown as {
+        __grudgeApp?: LabApp;
+        __grudgeBodyRev?: string;
+        GrudgeLabApp?: AppCtor;
+        app?: LabApp;
+      };
+      const held = bag.__grudgeApp;
+      if (held && bag.__grudgeBodyRev === GROVE_BODY_REV) {
         appRef.current = held;
         loader.classList.add("is-hidden");
+        return;
+      }
+      if (held) {
+        window.location.reload();
         return;
       }
       const App = await loadAppCtor();
       const app = new App(canvas, { hud, loader }) as LabApp;
       appRef.current = app;
-      const bag = window as unknown as { app: LabApp; __grudgeApp: LabApp };
       bag.app = app;
       bag.__grudgeApp = app;
+      bag.__grudgeBodyRev = GROVE_BODY_REV;
       await app.load();
     } catch (error) {
       const raw = error instanceof Error ? error.message : "Failed to start the lab";

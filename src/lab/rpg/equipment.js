@@ -82,6 +82,19 @@ const KIND = {
 
 const TOON_PREFIX = /^(wk_|brb_|elf_|dwf_|orc_|ud_)/i;
 
+/** Class → body letter on the Toon-RTS kit (A plate, B trail, C robe, D vestment). */
+const CLASS_FORM = {
+  warrior: { letter: 'a', pads: true },
+  raider: { letter: 'a', pads: true },
+  worge: { letter: 'a', pads: true },
+  ranger: { letter: 'b', pads: false },
+  thief: { letter: 'b', pads: false },
+  mage: { letter: 'c', pads: false },
+  virtuoso: { letter: 'c', pads: false },
+  priest: { letter: 'd', pads: false },
+  verduror: { letter: 'd', pads: false }
+};
+
 /** Class → preferred embedded weapon tokens (first match wins). */
 const CLASS_KIT = {
   warrior: { weapons: ['sword_a', 'sword', 'hammer_a'], shield: false, extras: [] },
@@ -378,9 +391,14 @@ export function dressToonKit(root, classId = 'warrior', weaponType, equipped) {
   if (!meshes.length) return false;
 
   const kit = kitFor(weaponType, classId, equipped) || CLASS_KIT[classId] || CLASS_KIT.warrior;
+  const form = CLASS_FORM[classId] || CLASS_FORM.warrior;
   const show = new Set();
-  for (const part of ['body', 'head', 'arms', 'legs', 'shoulders']) {
-    const pick = pickLetter(buckets[part], 'a');
+  for (const part of ['body', 'head', 'arms', 'legs']) {
+    const pick = pickLetter(buckets[part], form.letter);
+    if (pick) show.add(pick.node);
+  }
+  if (form.pads) {
+    const pick = pickLetter(buckets.shoulders, form.letter);
     if (pick) show.add(pick.node);
   }
   const weapon = pickWeapon(buckets.weapon, kit.weapons);

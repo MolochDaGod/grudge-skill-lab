@@ -4,31 +4,32 @@
  *
  * Play contract: `asset-packs/toon-rts-characters/glb/characters/{race}.glb`,
  * Bip001, 0 embedded clips, equip by mesh visibility. Mixamo is fallback only.
- * The animated worge bear (`valhalla/human.glb`) is the clip source and grove
- * NPC — never a player body. Worge is a class, not a mesh swap.
+ * Locomotion / attack takes are the official Bip001 packs in
+ * `/models/warlords/anims` — never the warbear (`valhalla/human.glb`) and
+ * never Mixamo. Those skeletons have a different bind pose and will melt the
+ * mesh. Worge is a class, not a mesh swap.
  */
 import { AnimationMixer, Box3, Group, LoopOnce, LoopRepeat, Vector3 } from 'three';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { LAYER } from '../core/Layers.js';
-import { RACES, WARBEAR_URL } from '../rpg/catalog.js';
+import { RACES } from '../rpg/catalog.js';
 import { dressToonKit } from '../rpg/equipment.js';
 import { applyFresnelAura } from '../materials/FresnelAura.js';
 import { optimizeAllClips, prepareSkinned } from './optimizeMeshAnimation.js';
-import { collectBones, loadWeaponComboClips, retargetClip } from './comboClips.js';
-import { canonicalWeapon } from '../rpg/weapons.js';
+import { BIP_ANIM_PACKS, bindBipClip, collectBones } from './comboClips.js';
 
 export const RACE_ORDER = ['human', 'barbarian', 'elf', 'dwarf', 'orc', 'undead'];
 
 const CAST_ALIAS = {
-  idle: 'warbear_stand',
-  walk: 'warbear_move',
-  move: 'warbear_move',
-  cast1: 'warbear_activeSkill',
-  cast2: 'warbear_attack00',
-  cast3: 'warbear_attack01',
-  combo1: 'combo1',
-  combo2: 'combo2',
-  combo3: 'combo3'
+  idle: 'idle',
+  walk: 'walk',
+  move: 'walk',
+  cast1: 'attack',
+  cast2: 'attack',
+  cast3: 'attack',
+  combo1: 'attack',
+  combo2: 'attack',
+  combo3: 'attack'
 };
 
 const _box = new Box3();
@@ -127,34 +128,31 @@ export class RaceAvatar {
       return { id, url: race.mesh, height: race.height ?? 1.8 };
     }).filter(Boolean);
 
-    const [clipGltf] = await Promise.all([
-      assets.loadGLTF(WARBEAR_URL).catch((error) => {
-        console.warn('[RaceAvatar] warbear clips failed', error);
-        return null;
-      })
+    const packEntries = Object.entries(BIP_ANIM_PACKS);
+    const [loaded, packs] = await Promise.all([
+      Promise.all(
+        entries.map(async (entry) => {
+          try {
+            const gltf = await assets.loadGLTF(entry.url);
+            return { ...entry, gltf };
+          } catch (error) {
+            console.warn('[RaceAvatar] failed', entry.id, error);
+            return { ...entry, gltf: null };
+          }
+        })
+      ),
+      Promise.all(
+        packEntries.map(async ([role, url]) => {
+          try {
+            const gltf = await assets.loadGLTF(url);
+            return { role, clip: gltf?.animations?.[0] || null };
+          } catch (error) {
+            console.warn('[RaceAvatar] bip pack failed', role, error);
+            return { role, clip: null };
+          }
+        })
+      )
     ]);
-
-    const loaded = await Promise.all(
-      entries.map(async (entry) => {
-        try {
-          const gltf = await assets.loadGLTF(entry.url);
-          return { ...entry, gltf };
-        } catch (error) {
-          console.warn('[RaceAvatar] failed', entry.id, error);
-          return { ...entry, gltf: null };
-        }
-      })
-    );
-
-    const extra = loaded.flatMap((row) => row.gltf?.animations ?? []);
-    this.clips = optimizeAllClips([...(clipGltf?.animations ?? []), ...extra]);
-    const seen = new Set();
-    this.clips = this.clips.filter((clip) => {
-      if (seen.has(clip.name)) return false;
-      seen.add(clip.name);
-      return true;
-    });
-    for (const clip of this.clips) this.clipByName.set(clip.name, clip);
 
     for (const row of loaded) {
       if (!row.gltf?.scene) continue;
@@ -169,25 +167,25 @@ export class RaceAvatar {
     }
 
     const firstRig = this.rigs.values().next().value?.root;
+    this.clips = [];
+    this.clipByName.clear();
     if (firstRig) {
       const bones = collectBones(firstRig);
-      this.clips = this.clips.map((clip) => retargetClip(clip, bones, 'bip'));
-      this.clipByName.clear();
-      for (const clip of this.clips) this.clipByName.set(clip.name, clip);
-      try {
-        this._comboPacks = await loadWeaponComboClips(assets, bones, 'bip');
-      } catch (error) {
-        console.warn('[RaceAvatar] weapon combos failed', error);
-        this._comboPacks = new Map();
+      for (const { role, clip } of packs) {
+        if (!clip) continue;
+        const bound = bindBipClip(clip, bones);
+        if (!bound?.tracks?.length) continue;
+        bound.name = role;
+        this.clips.push(bound);
+        this.clipByName.set(role, bound);
       }
-      this.bindCombo('SWORD');
-    }
-    if (!this.clipByName.has('combo1')) {
-      const fallback = ['warbear_attack00', 'warbear_attack01', 'warbear_activeSkill'];
-      ['combo1', 'combo2', 'combo3'].forEach((id, index) => {
-        const src = this.clipByName.get(fallback[index]);
-        if (src) this.clipByName.set(id, src);
-      });
+      this.clips = optimizeAllClips(this.clips);
+      const attack = this.clipByName.get('attack');
+      if (attack) {
+        for (const id of ['combo1', 'combo2', 'combo3', 'cast1', 'cast2', 'cast3']) {
+          this.clipByName.set(id, attack);
+        }
+      }
     }
 
     this.ready = this.rigs.size > 0;
@@ -238,23 +236,18 @@ export class RaceAvatar {
     this.bindCombo(this.weaponType);
   }
 
-  bindCombo(weaponType, pack) {
+  bindCombo(weaponType) {
     if (weaponType) this.weaponType = weaponType;
-    const id = canonicalWeapon(this.weaponType);
-    const resolved = pack || this._comboPacks.get(id) || this._comboPacks.get('SWORD');
-    if (!resolved?.clips?.length) return;
-    const bones = this.root ? collectBones(this.root) : null;
-    for (const clip of resolved.clips) {
-      const bound = bones ? retargetClip(clip, bones, 'bip') : clip;
-      const play = bound.tracks.length ? bound : clip;
-      this.clipByName.set(clip.name, play);
-      if (this.mixer) {
-        const action = this.mixer.clipAction(play);
-        action.setLoop(LoopOnce, 1);
-        action.clampWhenFinished = true;
-        action.timeScale = clip.userData.timeScale || resolved.timeScale || 1;
-        this.casts.set(clip.name, action);
-      }
+    const attack = this.clipByName.get('attack');
+    if (!attack) return;
+    for (const id of ['combo1', 'combo2', 'combo3', 'cast1', 'cast2', 'cast3']) {
+      this.clipByName.set(id, attack);
+    }
+    if (!this.mixer) return;
+    const action = this.casts.get('attack');
+    if (!action) return;
+    for (const id of ['combo1', 'combo2', 'combo3', 'cast1', 'cast2', 'cast3']) {
+      this.casts.set(id, action);
     }
   }
 
@@ -276,8 +269,9 @@ export class RaceAvatar {
     const bones = collectBones(this.root);
     const bindClip = (clip) => {
       if (!clip) return null;
-      const bound = retargetClip(clip, bones, 'bip');
-      return this.mixer.clipAction(bound.tracks.length ? bound : clip);
+      const bound = bindBipClip(clip, bones);
+      if (!bound?.tracks?.length) return null;
+      return this.mixer.clipAction(bound);
     };
 
     for (const clip of this.clips) {
@@ -290,10 +284,7 @@ export class RaceAvatar {
       if (action) this.casts.set(name, action);
     }
 
-    const stand =
-      this.casts.get('warbear_stand') ||
-      this.casts.get(this.clips[0]?.name) ||
-      [...this.casts.values()][0];
+    const stand = this.casts.get('idle');
     if (stand) {
       this.idle = stand;
       this.idle.setLoop(LoopRepeat, Infinity);
@@ -305,29 +296,28 @@ export class RaceAvatar {
       const action = this.casts.get(name);
       if (action) this.casts.set(alias, action);
     }
-    for (const name of ['warbear_activeSkill', 'warbear_attack00', 'warbear_attack01', 'combo1', 'combo2', 'combo3']) {
+    for (const name of ['attack', 'combo1', 'combo2', 'combo3', 'cast1', 'cast2', 'cast3']) {
       const action = this.casts.get(name);
       if (!action) continue;
       action.setLoop(LoopOnce, 1);
       action.clampWhenFinished = true;
     }
-    const walk = this.casts.get('warbear_move');
+    const walk = this.casts.get('walk');
     if (walk) {
       walk.setLoop(LoopRepeat, Infinity);
-      this.casts.set('walk', walk);
       this.casts.set('move', walk);
     }
     if (!this._loggedBind) {
       this._loggedBind = true;
       console.info(
-        `[RaceAvatar] ${this.raceId || 'rig'} bones=${bones.size} walkTracks=${walk?.getClip?.()?.tracks?.length ?? 0}`
+        `[RaceAvatar] ${this.raceId || 'rig'} bones=${bones.size} idleTracks=${stand?.getClip?.()?.tracks?.length ?? 0} walkTracks=${walk?.getClip?.()?.tracks?.length ?? 0}`
       );
     }
   }
 
   setLocomo(mode, speed = 4.6) {
     if (!this.mixer || this._cast) return this._locomo;
-    const walk = this.casts.get('warbear_move') || this.casts.get('walk');
+    const walk = this.casts.get('walk');
     if (mode === 'walk' && walk) {
       walk.setEffectiveTimeScale(Math.max(0.65, (speed || 4.6) / 4.6));
       if (this._locomo === 'walk') return 'walk';

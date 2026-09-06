@@ -92,7 +92,7 @@ export const GRUDGE6_RACES = [
 ] as const;
 
 export const CLIP_ROLES = {
-  idle: "idle / warbear_stand (pack idle, not a rest pose)",
+  idle: "anim_idle (Bip001 pack). Never warbear_stand or Mixamo on a Warlord body.",
   combo1: "T0 primary — Practice Slash",
   combo2: "T0 ability — Quick Thrust / lunge",
   combo3: "T0 ability — Wide Sweep",
