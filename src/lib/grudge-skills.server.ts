@@ -1,8 +1,10 @@
-import { getSql } from "@/lib/db";
+import { dbSource, getSql } from "@/lib/db";
 import { flattenSkills, labIdForSkill } from "@/lab/rpg/warlordsApi.js";
 
 const STORE = "https://objectstore.grudge-studio.com/api/v1/master-weaponSkills.json";
 const CONTRACT = "grudge.weaponSkill/v2";
+const CATALOG_KEY = "catalog:weaponSkills";
+const CATALOG_TTL_MS = 1000 * 60 * 10;
 
 type CatalogSkill = {
   id: string;
@@ -19,9 +21,11 @@ type CatalogSkill = {
 };
 
 type SkillDoc = Record<string, unknown>;
+type CatalogOrigin = "objectstore" | "postgres" | "memory";
 
 let catalogAt = 0;
 let catalog: CatalogSkill[] = [];
+let catalogOrigin: CatalogOrigin = "memory";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -56,14 +60,85 @@ function emptyVfx() {
   };
 }
 
-async function catalogSkills(): Promise<CatalogSkill[]> {
-  if (catalog.length && Date.now() - catalogAt < 1000 * 60 * 10) return catalog;
-  const response = await fetch(STORE, { headers: { Accept: "application/json" } });
+type KvRow = { payload: string; updated_ms: number };
+
+async function readKv(key: string): Promise<KvRow | null> {
+  try {
+    const sql = await getSql();
+    const rows = await sql<KvRow>`
+      select payload, extract(epoch from updated_at) * 1000 as updated_ms
+      from grudge_kv where key = ${key}
+    `;
+    return rows[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+async function writeKv(key: string, payload: string) {
+  const sql = await getSql();
+  await sql`
+    insert into grudge_kv (key, payload, updated_at)
+    values (${key}, ${payload}, now())
+    on conflict (key) do update set payload = ${payload}, updated_at = now()
+  `;
+}
+
+function parseCatalog(raw: string | null | undefined): CatalogSkill[] | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { skills?: CatalogSkill[] } | CatalogSkill[];
+    const skills = Array.isArray(parsed) ? parsed : parsed.skills;
+    return Array.isArray(skills) && skills.length ? skills : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchLiveCatalog(): Promise<CatalogSkill[]> {
+  const response = await fetch(STORE, {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(6000),
+  });
   if (!response.ok) throw new Error(`ObjectStore ${response.status}`);
   const data = await response.json();
-  catalog = flattenSkills(data) as CatalogSkill[];
-  catalogAt = Date.now();
-  return catalog;
+  const skills = flattenSkills(data) as CatalogSkill[];
+  if (!skills.length) throw new Error("ObjectStore empty");
+  return skills;
+}
+
+async function catalogSkills(): Promise<CatalogSkill[]> {
+  if (catalog.length && Date.now() - catalogAt < CATALOG_TTL_MS) return catalog;
+
+  const cached = await readKv(CATALOG_KEY);
+  const cachedSkills = parseCatalog(cached?.payload);
+  const cachedAge = cached ? Date.now() - Number(cached.updated_ms || 0) : Infinity;
+
+  if (cachedSkills && cachedAge < CATALOG_TTL_MS) {
+    catalog = cachedSkills;
+    catalogAt = Date.now();
+    catalogOrigin = "postgres";
+    return catalog;
+  }
+
+  try {
+    const live = await fetchLiveCatalog();
+    catalog = live;
+    catalogAt = Date.now();
+    catalogOrigin = "objectstore";
+    void writeKv(CATALOG_KEY, JSON.stringify({ fetchedAt: catalogAt, count: live.length, skills: live })).catch(
+      () => undefined,
+    );
+    return catalog;
+  } catch (error) {
+    if (cachedSkills) {
+      catalog = cachedSkills;
+      catalogAt = Date.now();
+      catalogOrigin = "postgres";
+      return catalog;
+    }
+    throw error;
+  }
 }
 
 function animPackFor(weapon: string) {
@@ -171,7 +246,22 @@ async function overlays(): Promise<Map<string, SkillDoc>> {
   return map;
 }
 
-export async function listSkills(filter: { weapon?: string; wired?: string } = {}) {
+export async function listSavedSkills() {
+  const saved = await overlays();
+  const skills = [...saved.entries()].map(([id, doc]) => ({ ...doc, id }));
+  return {
+    contract: "grudge.weaponSkillList/v2",
+    count: skills.length,
+    source: "postgres",
+    catalog: "postgres" as const,
+    db: dbSource,
+    overlays: saved.size,
+    skills,
+  };
+}
+
+export async function listSkills(filter: { weapon?: string; wired?: string; saved?: string } = {}) {
+  if (filter.saved === "1" || filter.saved === "true") return listSavedSkills();
   const [skills, saved] = await Promise.all([catalogSkills(), overlays()]);
   const weapon = filter.weapon?.toUpperCase();
   const wiredOnly = filter.wired === "1" || filter.wired === "true";
@@ -186,7 +276,10 @@ export async function listSkills(filter: { weapon?: string; wired?: string } = {
   return {
     contract: "grudge.weaponSkillList/v2",
     count: docs.length,
-    source: STORE,
+    source: catalogOrigin === "postgres" ? "postgres" : STORE,
+    catalog: catalogOrigin,
+    db: dbSource,
+    overlays: saved.size,
     skills: docs,
   };
 }

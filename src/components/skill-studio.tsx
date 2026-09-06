@@ -19,8 +19,10 @@ import {
   emptyRecipe,
   emptyStage,
   exportRecipe,
+  hydrateRecipesFromRemote,
   listSavedRecipes,
   parseIntent,
+  persistRecipeRemote,
   recipeFor,
   saveRecipe,
   saveRecipeAs,
@@ -130,46 +132,26 @@ export function SkillStudio({ open, onClose }: { open: boolean; onClose: () => v
   const grove = useMemo(() => groveSkills() as Skill[], []);
 
   const refreshSaved = () => {
-    const local = listSavedRecipes().map((row) => {
-      const groveHit = grove.find((g) => g.id === row.id || g.labId === row.id);
-      return {
-        id: row.id,
-        name: row.recipe.name || groveHit?.name || row.id,
-        labId: row.recipe.labId || groveHit?.labId || (ELEMENT_META[row.id] ? row.id : null),
-        weaponType: row.recipe.weaponType || groveHit?.weaponType,
-        family: row.recipe.family || groveHit?.family,
-        slot: "saved",
-        source: "saved",
-        description: row.recipe.intent || groveHit?.description,
-        wired: Boolean(groveHit?.labId || ELEMENT_META[row.id]),
-      } as Skill;
-    });
-    setSaved(local);
-    void fetch("/api/v1/skills")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((pack) => {
-        const items = (pack?.skills || pack?.items || []) as Array<Record<string, unknown>>;
-        if (!Array.isArray(items) || !items.length) return;
-        const extra: Skill[] = [];
-        for (const item of items) {
-          const vfx = item.vfx as { intent?: string; family?: string } | undefined;
-          if (!vfx && !item.updatedAt) continue;
-          const id = String(item.id || item.skillId || "");
-          if (!id || local.some((row) => row.id === id)) continue;
-          extra.push({
-            id,
-            name: String(item.name || id),
-            labId: (item.runtime as { labId?: string } | undefined)?.labId || null,
-            weaponType: String(item.weaponType || ""),
-            family: vfx?.family,
-            slot: "api",
-            source: "saved",
-            description: vfx?.intent || String(item.description || ""),
-            wired: Boolean((item.runtime as { labId?: string } | undefined)?.labId),
-          });
-        }
-        if (extra.length) setSaved((prev) => [...prev, ...extra]);
-      })
+    const paint = () => {
+      const local = listSavedRecipes().map((row) => {
+        const groveHit = grove.find((g) => g.id === row.id || g.labId === row.id);
+        return {
+          id: row.id,
+          name: row.recipe.name || groveHit?.name || row.id,
+          labId: row.recipe.labId || groveHit?.labId || (ELEMENT_META[row.id] ? row.id : null),
+          weaponType: row.recipe.weaponType || groveHit?.weaponType,
+          family: row.recipe.family || groveHit?.family,
+          slot: "saved",
+          source: "saved",
+          description: row.recipe.intent || groveHit?.description,
+          wired: Boolean(groveHit?.labId || ELEMENT_META[row.id]),
+        } as Skill;
+      });
+      setSaved(local);
+    };
+    paint();
+    void hydrateRecipesFromRemote()
+      .then(() => paint())
       .catch(() => undefined);
   };
 
@@ -185,7 +167,7 @@ export function SkillStudio({ open, onClose }: { open: boolean; onClose: () => v
         const total =
           (pack.meta as { total?: number } | undefined)?.total ?? pack.skills?.length ?? 0;
         setTrees(list);
-        setStatus(`${grove.length} grove · ${total} Warlords · recipes local`);
+        setStatus(`${grove.length} grove · ${total} Warlords · recipes in lab DB`);
         setWeaponId((current) =>
           list.some((row) => row.id === current) ? current : list[0]?.id || current
         );
@@ -266,16 +248,21 @@ export function SkillStudio({ open, onClose }: { open: boolean; onClose: () => v
     setSkillId(id);
     setNote(`Saved new recipe · ${label}`);
     toast(`Saved ${label}`);
+    void persistRecipeRemote(
+      { ...skill, id, name: label },
+      { ...recipe, name: label, labId: skill.labId, weaponType: skill.weaponType },
+    ).catch(() => undefined);
   };
 
   const apply = async (andTry = false, publish = false) => {
     if (!skill) return;
-    saveRecipe(skill.id, {
+    const payload = {
       ...recipe,
       name: skill.name,
       labId: skill.labId,
       weaponType: skill.weaponType,
-    });
+    };
+    saveRecipe(skill.id, payload);
     refreshSaved();
     const labId = skill.labId || (ELEMENT_META[skill.id] ? skill.id : null);
     const wired = labId ? applyRecipeToSettings(labId, recipe) : false;
@@ -287,37 +274,29 @@ export function SkillStudio({ open, onClose }: { open: boolean; onClose: () => v
     if (recipe.variant) {
       lab()?.auras?.setVariant?.("fire", recipe.variant);
     }
-    if (publish) {
-      try {
-        const response = await fetch(`/api/v1/skills/${encodeURIComponent(skill.id)}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: skill.name,
-            weaponType: skill.weaponType,
-            vfx: recipe,
-            runtime: { labId: labId || null },
-            deploy: {
-              warlords: true,
-              casting: Boolean(labId),
-              production: true,
-              promotedAt: new Date().toISOString(),
-            },
-          }),
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    try {
+      await persistRecipeRemote({ ...skill, labId }, payload, { production: publish });
+      if (publish) {
         setNote("Published. Warlords can fetch this id.");
         toast(`${skill.name} published`);
-      } catch (error) {
+      } else {
+        setNote(
+          wired
+            ? `Saved to lab DB · ${recipe.variant} on ${recipe.family}${recipe.bending ? " + bending" : ""}.`
+            : "Saved to lab DB.",
+        );
+        toast(wired ? `${skill.name} applied` : `${skill.name} saved`);
+      }
+    } catch (error) {
+      if (publish) {
         setNote(error instanceof Error ? error.message : "Publish failed");
         toast("Publish failed");
         return;
       }
-    } else {
       setNote(
         wired
-          ? `Applied · ${recipe.variant} on ${recipe.family}${recipe.bending ? " + bending" : ""}.`
-          : "Saved. Publish writes the skill API."
+          ? `Applied locally · lab DB unreachable.`
+          : "Saved locally. Lab DB unreachable.",
       );
       toast(wired ? `${skill.name} applied` : `${skill.name} saved`);
     }

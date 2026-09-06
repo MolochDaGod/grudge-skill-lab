@@ -2,8 +2,8 @@
 /**
  * Per-skill visual recipes for Skill Studio.
  *
- * Typed intent + knobs, stored locally, applied onto `settings[labId]`
- * when the skill is wired in the grove.
+ * Typed intent + knobs. Local store is a cache; Postgres (`PUT /api/v1/skills`)
+ * is the lab source of truth. Applied onto `settings[labId]` when wired.
  */
 
 import { settings, applySettings, CAST_ANIMATIONS, ELEMENTS, ELEMENT_META } from '../config/settings.js';
@@ -234,6 +234,74 @@ export function saveRecipeAs(sourceId, recipe, name) {
     sourceId
   });
   return id;
+}
+
+/**
+ * Write a recipe to the lab Skill API (Postgres overlay). Drafts and
+ * production publishes share this path — `production` only flips the flag.
+ */
+export async function persistRecipeRemote(skill, recipe, extra = {}) {
+  const id = skill?.id;
+  if (!id) return null;
+  const labId = skill.labId || recipe?.labId || null;
+  const response = await fetch(`/api/v1/skills/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: skill.name || recipe?.name || id,
+      weaponType: skill.weaponType || recipe?.weaponType,
+      vfx: recipe,
+      runtime: { labId },
+      deploy: {
+        warlords: true,
+        casting: Boolean(labId),
+        production: Boolean(extra.production),
+        promotedAt: extra.production ? new Date().toISOString() : null
+      }
+    })
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/** Merge Postgres overlays into the local recipe store. Newer timestamp wins. */
+export async function hydrateRecipesFromRemote() {
+  try {
+    const response = await fetch('/api/v1/skills?saved=1', {
+      headers: { Accept: 'application/json' }
+    });
+    if (!response.ok) return loadRecipes();
+    const pack = await response.json();
+    const items = Array.isArray(pack?.skills) ? pack.skills : [];
+    const local = loadRecipes();
+    let changed = false;
+    for (const item of items) {
+      const id = String(item?.id || '');
+      const vfx = item?.vfx;
+      if (!id || !vfx || typeof vfx !== 'object') continue;
+      const remoteAt = Number(item.updatedAt) || 0;
+      const localAt = Number(local[id]?.updatedAt) || 0;
+      if (local[id] && localAt > remoteAt) continue;
+      local[id] = {
+        ...vfx,
+        name: item.name || vfx.name,
+        weaponType: item.weaponType || vfx.weaponType,
+        labId: item.runtime?.labId || vfx.labId,
+        updatedAt: remoteAt || Date.now()
+      };
+      changed = true;
+    }
+    if (changed) {
+      try {
+        localStorage.setItem(RECIPE_STORE, JSON.stringify(local));
+      } catch {
+        /* quota */
+      }
+    }
+    return local;
+  } catch {
+    return loadRecipes();
+  }
 }
 
 /**

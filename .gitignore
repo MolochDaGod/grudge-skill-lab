@@ -1,5 +1,6 @@
 # deps / build
 node_modules/
+.node_modules.lock
 dist/
 .output/
 .tanstack/
@@ -35,7 +36,6 @@ test-results/
 public/assets/
 public/models/valhalla/foliage.glb
 public/models/valhalla/frog.glb
-public/models/valhalla/human.glb
 public/models/valhalla/undead.glb
 public/models/valhalla/orc.glb
 public/models/valhalla/elf.glb

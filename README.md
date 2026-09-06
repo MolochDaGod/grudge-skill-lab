@@ -47,13 +47,14 @@ Mage / priest / virtuoso **F** is the official cooldown-0 class ability: plant t
 Kept in-repo, game-ready:
 
 - `public/models/warlords/*.glb` — 6 race play bodies
+- `public/models/valhalla/human.glb` — worge bear clip source (walk / idle)
 - `public/models/valhalla/dummy.glb` — range dummy
 - `public/models/valhalla/attackcombo.glb` — combo fallback
 - `public/models/totems/totem_nordin_t0.glb`, `totem_nordin_t1.glb`, `totem_freya_t3.glb`, `totem_odin_t6.glb` — class F
 - Mixamo fallback `Idle.fbx` + `cast1–3.fbx` + `diffuse.png`
 - Ground / HDR / brand / skill icons
 
-**Not in git** (see `.gitignore`): duplicate `public/assets/`, unused valhalla NPCs / foliage / extra totems, QA screenshots, attachments, zips. Production meshes also live on [assets.grudge-studio.com](https://assets.grudge-studio.com/). Combo packs pull Mixamo from the CDN when local clips are missing.
+**Not in git** (see `.gitignore`): duplicate `public/assets/` (~23 MB), unused valhalla NPCs / foliage / frog / extra totems (~20 MB). Production meshes also live on [assets.grudge-studio.com](https://assets.grudge-studio.com/). Combo packs pull Mixamo from the CDN when local clips are missing.
 
 ---
 
@@ -63,12 +64,13 @@ Kept in-repo, game-ready:
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/v1/skills?weapon=SWORD&wired=1` | Flattened ObjectStore skills + lab VFX |
+| `GET` | `/api/v1/skills?weapon=SWORD&wired=1` | Flattened ObjectStore skills + lab VFX (catalog cached in Postgres) |
+| `GET` | `/api/v1/skills?saved=1` | Recipes saved in the lab database |
 | `GET` | `/api/v1/skills/:id` | One skill (catalog + published override) |
-| `PUT` | `/api/v1/skills/:id` | Publish / edit a visual recipe |
+| `PUT` | `/api/v1/skills/:id` | Save / publish a visual recipe |
 | `GET` | `/api/v1/kit` | Grudge 6 race mesh / skeleton / anim pack index |
 
-CORS is open. Overrides persist in Postgres when the app is deployed with a database; otherwise the catalog is ObjectStore live.
+CORS is open. Auth is off: skill overlays and the catalog snapshot are unowned world rows (no accounts). Skill Studio **Save** writes the database; **Publish** marks `deploy.production`. Character sheets stay in the browser.
 
 VFX recipe knobs: `intent`, `fromWhere`, `movement`, `projectile`, `trail`, `speed`, `castTime`, `chargeAnim`, `dropAsset`, `impact`, `aura`, `transform`.
 

@@ -14,14 +14,14 @@ export const Route = createFileRoute("/api/v1")({
         Response.json(
           {
             contract: "grudge.skillApi/v2",
-            note: "Warlords-era skill + kit API. PUT a skill to publish a visual recipe.",
+            note: "Warlords-era skill + kit API. Catalog is cached in Postgres; PUT saves a visual recipe.",
             endpoints: {
               skills: "/api/v1/skills",
               skill: "/api/v1/skills/:id",
               kit: "/api/v1/kit",
             },
             query: {
-              skills: "?weapon=SWORD&wired=1",
+              skills: "?weapon=SWORD&wired=1&saved=1",
             },
           },
           { headers: cors },
