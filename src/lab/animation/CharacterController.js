@@ -152,9 +152,13 @@ const BIP_TO_MIXAMO = {
   'Bip001 R Toe0': 'RightToeBase'
 };
 
+const BIP_TO_MIXAMO_NORM = Object.fromEntries(
+  Object.entries(BIP_TO_MIXAMO).map(([key, value]) => [key.replace(/[:\s]+/g, '_'), value])
+);
+
 const shortBoneName = (name) => {
   const short = stripBone(name);
-  return BIP_TO_MIXAMO[short] || short;
+  return BIP_TO_MIXAMO[short] || BIP_TO_MIXAMO_NORM[short.replace(/[:\s]+/g, '_')] || short;
 };
 
 /**
@@ -221,7 +225,14 @@ export class CharacterController {
     this._step = null;
     this._hover = 0;
     this._ghost = false;
+    this._moveX = 0;
+    this._moveZ = 0;
+    this._speed = 0;
+    this._locomo = 'idle';
+    this._walkSpeed = 4.6;
     this._rightAxis = new Vector3(1, 0, 0);
+    /** Optional Rapier mover: `(dx, dz) => {x,z} | null`. */
+    this.mover = null;
     /** Race GLB overlay. Null until `adoptAvatar`. Mixamo is fallback only. */
     this.avatar = null;
     this._avatarMixer = null;
@@ -864,7 +875,7 @@ export class CharacterController {
     const ease = 1 - (1 - u) * (1 - u) * (1 - u);
     let x = s.startX + s.dirX * s.meters * ease;
     let z = s.startZ + s.dirZ * s.meters * ease;
-    const GROVE = 7.4;
+    const GROVE = 22;
     const r = Math.hypot(x, z);
     if (r > GROVE) {
       x *= GROVE / r;
@@ -961,6 +972,52 @@ export class CharacterController {
     }
   }
 
+  setMoveInput(x = 0, z = 0) {
+    this._moveX = x;
+    this._moveZ = z;
+  }
+
+  get speed() {
+    return this._speed;
+  }
+
+  get locomo() {
+    return this._locomo;
+  }
+
+  /** Scene node that actually parents Bip001 / Mixamo bones (not a SkinnedMesh). */
+  skeletonRoot() {
+    if (this.usingAvatar && this.avatar?.root) return this.avatar.root;
+    return this.model || this.root;
+  }
+
+  skeletonInfo() {
+    const root = this.skeletonRoot();
+    let bones = 0;
+    let skinned = 0;
+    let richest = 0;
+    root?.traverse((node) => {
+      if (node.isBone) bones += 1;
+      if (node.isSkinnedMesh && node.skeleton) {
+        skinned += 1;
+        richest = Math.max(richest, node.skeleton.bones?.length || 0);
+      }
+    });
+    const walk = this.usingAvatar
+      ? Boolean(this.avatar?.casts?.get('warbear_move') || this.avatar?.casts?.get('walk'))
+      : Boolean(this.casts?.has('walk'));
+    return {
+      bones,
+      skinned,
+      richest,
+      usingAvatar: this.usingAvatar,
+      raceId: this.avatar?.raceId ?? null,
+      locomo: this._locomo,
+      walk,
+      idle: this.idle?.getClip?.()?.name ?? null
+    };
+  }
+
   getBoneWorld(name, target) {
     const out = target || new Vector3();
     const bone = this._bones?.get(name) || this._bones?.get('RightHand') || this._bones?.get('LeftHand');
@@ -1002,10 +1059,73 @@ export class CharacterController {
     return count;
   }
 
-  update(dt) {
+  _applyLocomotion(dt, camera) {
+    const ix = this._moveX || 0;
+    const iz = this._moveZ || 0;
+    const mag = Math.hypot(ix, iz);
+    const busy = this._holding || this._cast || this._step || this._ghost;
+    const moving = mag > 0.15 && !busy && dt > 0;
+    if (!moving) {
+      this._speed = this._speed > 0.05 ? this._speed * Math.max(0, 1 - 10 * dt) : 0;
+      if (this._locomo !== 'idle' && !this._cast) {
+        this._locomo = 'idle';
+        this.avatar?.setLocomo?.('idle');
+        if (!this.usingAvatar && this.idle) this.idle.setEffectiveTimeScale(1);
+      }
+      return;
+    }
+
+    _joint.set(0, 0, 1);
+    if (camera) {
+      camera.getWorldDirection(_joint);
+    }
+    _joint.y = 0;
+    if (_joint.lengthSq() < 1e-6) _joint.set(0, 0, 1);
+    _joint.normalize();
+    const fx = _joint.x;
+    const fz = _joint.z;
+    const rx = -fz;
+    const rz = fx;
+    const wishX = fx * iz + rx * ix;
+    const wishZ = fz * iz + rz * ix;
+    const len = Math.hypot(wishX, wishZ) || 1;
+    const nx = wishX / len;
+    const nz = wishZ / len;
+    const speed = this._walkSpeed;
+    this._speed = speed;
+    let x = this.root.position.x + nx * speed * dt;
+    let z = this.root.position.z + nz * speed * dt;
+    const GROVE = 22;
+    const r = Math.hypot(x, z);
+    if (r > GROVE) {
+      x *= GROVE / r;
+      z *= GROVE / r;
+    }
+    const dx = x - this.root.position.x;
+    const dz = z - this.root.position.z;
+    const blocked = this.mover?.(dx, dz);
+    if (blocked) {
+      this.root.position.x = blocked.x;
+      this.root.position.z = blocked.z;
+    } else {
+      this.root.position.x = x;
+      this.root.position.z = z;
+    }
+    this.turnToward(Math.atan2(nx, nz), 0.0008, dt);
+    if (this._locomo !== 'walk') {
+      this._locomo = 'walk';
+      this.avatar?.setLocomo?.('walk', speed);
+    } else {
+      this.avatar?.setLocomo?.('walk', speed);
+    }
+    if (!this.usingAvatar && this.idle) this.idle.setEffectiveTimeScale(1.25);
+  }
+
+  update(dt, camera) {
     // Driven by the *simulation* delta, and re-applied every frame even at
     // dt = 0: pausing mid-cast holds the lunge, and `castLean` stays a live
     // slider against that frozen pose.
+    this._applyLocomotion(dt, camera);
     this._applyStep(dt);
     this._applyLunge(dt);
 
@@ -1023,16 +1143,6 @@ export class CharacterController {
     this.mixer.update(dt);
     this._freezeHold();
 
-    // The renderer would do this at draw time, which is too late for anything
-    // that reads the pose: the buffs run *between* this update and the render,
-    // and a flame rooted on a bone whose matrix is still last frame's is a
-    // flame hanging behind the arm it belongs to. Cheap enough to simply do
-    // here — the rig is a few dozen joints, and the renderer's own pass then
-    // finds everything already clean.
-    //
-    // From `root` rather than from the model: the heading lives up there and
-    // the lunge on the joint under it, so starting any lower would resolve the
-    // pose against a stale body.
     this.root.updateMatrixWorld(true);
   }
 

@@ -46,6 +46,7 @@ import { settings, ELEMENTS, CastShape } from '../config/settings.js';
 import { RACE_MESHES } from '../config/library.js';
 import { Actor } from '../rpg/actor.js';
 import { RapierWorld } from '../physics/RapierWorld.js';
+import { labStore } from '../rpg/labStore.js';
 import { loadSave, persistActor, bindAutosave, schedulePersist } from '../rpg/save.js';
 import { RpgHud } from '../rpg/RpgHud.js';
 import { resolveCastHit, resolveCastHits, dummyHpFor } from '../rpg/combat.js';
@@ -197,6 +198,7 @@ export class App {
     /* ---- UI ---- */
     this.loading = new LoadingScreen(options.loader);
     this.hud = new HUD(options.hud ?? document.getElementById('hud'));
+    this.hud.bindMove?.(this.input);
     this.editor = new Editor({
       onClear: () => this.clearEffects(),
       onToast: (message) => this.hud.showToast(message),
@@ -749,6 +751,7 @@ export class App {
     this.world?.setDummyMax(dummyHpFor(this.actor.level));
     if (kind === 'race' || kind === 'class' || kind === 'weapon') {
       this.character.setRace(this.actor.raceId, this.actor.equipped, this.actor.classId, this.actor.weaponType);
+      this.helpers?.rebind();
     } else if (kind === 'gear') this.character.dress(this.actor.equipped, this.actor.classId, this.actor.weaponType);
     this.rpgHud.refresh();
     this.combatPanel?.setSnapshot(this.actor.snapshot());
@@ -1065,6 +1068,8 @@ export class App {
     );
     await Promise.all([grove, avatar, physicsReady]);
     this.world.attachPhysics(this.physics);
+    this.character.mover = (dx, dz) => this.physics?.tryMove(dx, dz);
+    this.helpers?.rebind();
     const kit = await loadTotemKit(assets);
     this.abilities.ctx.totemKit = kit;
     this.world.setDummyMax(dummyHpFor(this.actor.level));
@@ -1095,6 +1100,17 @@ export class App {
     this.loading.hide();
 
     if (typeof window !== 'undefined') {
+      window.__labState = labStore;
+      window.__controlsTest = {
+        getYaw: () => this.character.facing,
+        getSpeed: () => this.character.speed,
+        setKeys: (codes = []) => this.input.setHeld(codes),
+        setSteer: (v = 0) => {
+          if (v > 0.2) this.input.setHeld(['KeyW', 'KeyA']);
+          else if (v < -0.2) this.input.setHeld(['KeyW', 'KeyD']);
+          else this.input.setHeld(['KeyW']);
+        }
+      };
       window.__labCast = (element) => {
         const id = ELEMENTS.includes(element) ? element : this.element;
         this.selectAbility(id, { silent: true });
@@ -1129,6 +1145,8 @@ export class App {
             avatarRace: this.character.avatar?.raceId ?? null,
             avatarVisible: Boolean(this.character.avatar?.group?.visible),
             idle: this.character.idle?.getClip()?.name ?? null,
+            locomo: this.character.locomo,
+            skeleton: this.character.skeletonInfo(),
             combo: ['combo1', 'combo2', 'combo3'].filter((id) => this.character.casts?.has(id) || this.character.avatar?.casts?.has(id)),
             loadout: [...this.actor.loadout],
             sources: { ...this.actor.loadoutSources },
@@ -1252,10 +1270,30 @@ export class App {
       this._charge.t = Math.min(1, this._charge.t + chargeDt / Math.max(0.2, this._charge.duration));
     }
 
-    if (settings.character.turnToAim && (this.aim.isArmed || this._draw.active || this._charge.active)) {
+    const move = this.input.sampleMove();
+    this.character.setMoveInput(move.x, move.z);
+    const moving = Math.hypot(move.x, move.z) > 0.15;
+    if (
+      !moving &&
+      settings.character.turnToAim &&
+      (this.aim.isArmed || this._draw.active || this._charge.active)
+    ) {
       this.character.turnToward(this.aim.facing, settings.character.turnRate, raw);
     }
-    this.character.update(dt);
+    this.character.update(dt, this.camera);
+    labStore.getState().patch({
+      locomo: this.character.locomo,
+      moveX: move.x,
+      moveZ: move.z,
+      yaw: this.character.facing,
+      speed: this.character.speed,
+      raceId: this.actor.raceId,
+      classId: this.actor.classId,
+      weaponType: this.actor.weaponType,
+      skill: this.element,
+      skeletonOn: Boolean(this.helpers?.skeletonOn),
+      usingAvatar: this.character.usingAvatar
+    });
     this.physics?.syncPlayer(this.character.position);
     this.physics?.step(dt);
     this.world.update(dt, this.character.position);

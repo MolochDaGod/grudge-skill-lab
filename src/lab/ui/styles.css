@@ -404,6 +404,64 @@ body {
   text-transform: none;
 }
 
+.hud__stick {
+  position: absolute;
+  left: 18px;
+  bottom: 148px;
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  pointer-events: auto;
+  touch-action: none;
+  z-index: 8;
+}
+
+.hud__stick-ring {
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--ui-accent) 45%, transparent);
+  background: radial-gradient(circle at 50% 40%, rgba(18, 28, 24, 0.55), rgba(6, 10, 12, 0.72));
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+}
+
+.hud__stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 36px;
+  height: 36px;
+  margin: -18px 0 0 -18px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ui-accent) 70%, #fff);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35), 0 6px 14px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.hud__stick span {
+  position: absolute;
+  left: 50%;
+  bottom: -2px;
+  transform: translateX(-50%);
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  color: var(--ui-text-dim);
+  pointer-events: none;
+}
+
+.hud__stick.is-held .hud__stick-knob {
+  background: #e8b84a;
+}
+
+@media (max-width: 860px) {
+  .hud__stick {
+    bottom: 118px;
+    left: 10px;
+    width: 96px;
+    height: 96px;
+  }
+}
+
 .hud__toast {
   position: absolute;
   left: 50%;

@@ -132,6 +132,49 @@ export function collectBones(root) {
   return set;
 }
 
+function stripBoneSuffix(name) {
+  return String(name || '')
+    .split(':')
+    .pop()
+    .replace(/^mixamorig/i, '')
+    .replace(/_\d+$/, '');
+}
+
+/**
+ * Bind a clip onto a live rig. Warbear takes use `Bip001 L Foot_010`;
+ * Warlords race kits use `Bip001 L Foot`. Mixamo uses `mixamorigLeftFoot`.
+ */
+export function retargetClip(clip, boneSet, mode = 'bip') {
+  if (!clip?.tracks?.length || !boneSet?.size) return clip;
+  const next = clip.clone();
+  next.name = clip.name;
+  next.tracks = next.tracks
+    .map((track) => {
+      const remapped = remapTrackName(track.name, boneSet, mode) || matchLooseBone(track.name, boneSet);
+      if (!remapped) return null;
+      track.name = remapped;
+      return track;
+    })
+    .filter(Boolean);
+  next.resetDuration?.();
+  return next;
+}
+
+function matchLooseBone(trackName, boneSet) {
+  const dot = trackName.lastIndexOf('.');
+  if (dot < 0) return null;
+  const node = trackName.slice(0, dot);
+  const prop = trackName.slice(dot + 1);
+  if (boneSet.has(node)) return trackName;
+  const short = stripBoneSuffix(node);
+  if (boneSet.has(short)) return `${short}.${prop}`;
+  const want = normBone(short);
+  for (const bone of boneSet) {
+    if (stripBoneSuffix(bone) === short || normBone(bone) === want) return `${bone}.${prop}`;
+  }
+  return null;
+}
+
 function remapTrackName(trackName, boneSet, mode) {
   const dot = trackName.lastIndexOf('.');
   if (dot < 0) return null;

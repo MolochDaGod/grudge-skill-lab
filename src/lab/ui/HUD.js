@@ -39,7 +39,7 @@ export class HUD {
     root.innerHTML = `
       <div class="hud__panel hud__title">
         <img class="hud__mark" src="/brand/logo.png" alt="Grudge" />
-        <span data-blurb>Ability Lab · 1–3 combo · Shift dash · J combat · [ ] weapons · I sheet</span>
+        <span data-blurb>WASD walk · 1–3 combo · Shift dash · J combat · [ ] weapons · I sheet</span>
       </div>
 
       <div class="hud__panel hud__stats">
@@ -70,6 +70,7 @@ export class HUD {
           B, M and K are self buffs — nothing to aim. Press again to let go; any of them can run
           together. Roles (stun/buff/debuff/cast/channel) pulse the matching form.
         </div>
+        <div><strong>WASD / arrows</strong> — walk the grove (camera-relative). <strong>A</strong> left, <strong>D</strong> right, <strong>W</strong> into the shot.</div>
         <div><strong>Move</strong> — aim &nbsp; <strong>Left click</strong> — cast (bow: hold to draw)</div>
         <div><strong>Esc / right click</strong> — cancel the cast</div>
         <div><strong>Right drag</strong> — orbit &nbsp; <strong>Scroll</strong> — zoom</div>
@@ -132,6 +133,11 @@ export class HUD {
 
       <div class="hud__toast" data-toast></div>
       <div class="hud__paused" data-paused>Paused</div>
+      <div class="hud__stick" data-stick aria-label="Move">
+        <div class="hud__stick-ring"></div>
+        <div class="hud__stick-knob" data-knob></div>
+        <span>WASD</span>
+      </div>
     `;
 
     this.cards = new Map();
@@ -178,6 +184,65 @@ export class HUD {
     this.toast = root.querySelector('[data-toast]');
     this.pausedBadge = root.querySelector('[data-paused]');
     this.abilityBar = root.querySelector('.hud__abilities');
+    this._moveInput = null;
+    this._stick = root.querySelector('[data-stick]');
+    this._knob = root.querySelector('[data-knob]');
+  }
+
+  /**
+   * On-screen stick writes the same move axis WASD uses.
+   * @param {import('../input/InputManager.js').InputManager} input
+   */
+  bindMove(input) {
+    this._moveInput = input;
+    const stick = this._stick;
+    const knob = this._knob;
+    if (!stick || !input) return;
+    const radius = 42;
+    const apply = (clientX, clientY) => {
+      const rect = stick.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      let x = (clientX - cx) / radius;
+      let y = (clientY - cy) / radius;
+      const mag = Math.hypot(x, y);
+      if (mag > 1) {
+        x /= mag;
+        y /= mag;
+      }
+      if (mag < 0.12) {
+        x = 0;
+        y = 0;
+      }
+      input.setTouch(x, -y);
+      if (knob) {
+        knob.style.transform = `translate(${x * radius}px, ${y * radius}px)`;
+      }
+      stick.classList.toggle('is-held', mag >= 0.12);
+    };
+    const clear = () => {
+      input.setTouch(0, 0);
+      if (knob) knob.style.transform = 'translate(0, 0)';
+      stick.classList.remove('is-held');
+    };
+    stick.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      stick.setPointerCapture(event.pointerId);
+      apply(event.clientX, event.clientY);
+    });
+    stick.addEventListener('pointermove', (event) => {
+      if (!stick.hasPointerCapture(event.pointerId)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      apply(event.clientX, event.clientY);
+    });
+    const up = (event) => {
+      if (stick.hasPointerCapture?.(event.pointerId)) stick.releasePointerCapture(event.pointerId);
+      clear();
+    };
+    stick.addEventListener('pointerup', up);
+    stick.addEventListener('pointercancel', up);
   }
 
   /** @param {{silent?: boolean}} [options] */

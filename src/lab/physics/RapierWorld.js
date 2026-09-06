@@ -65,6 +65,26 @@ export class RapierWorld {
     this.player.body.setNextKinematicTranslation({ x: pos.x, y: Math.max(0, pos.y), z: pos.z });
   }
 
+  /**
+   * Kinematic step via Rapier's character controller. Returns the blocked
+   * translation, or null if physics is not ready.
+   */
+  tryMove(dx, dz) {
+    if (!this.ready || !this.player || !this.controller) return null;
+    const collider = this.player.collider;
+    const body = this.player.body;
+    this.controller.computeColliderMovement(collider, { x: dx, y: 0, z: dz });
+    const moved = this.controller.computedMovement();
+    const at = body.translation();
+    const next = {
+      x: at.x + moved.x,
+      y: Math.max(0, at.y + (moved.y || 0)),
+      z: at.z + moved.z
+    };
+    body.setNextKinematicTranslation(next);
+    return next;
+  }
+
   step(dt) {
     if (!this.ready || dt <= 0) return;
     this._acc = Math.min(this._acc + dt, MAX_ACC);

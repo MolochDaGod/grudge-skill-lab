@@ -27,6 +27,8 @@ export class InputManager extends EventEmitter {
     this._leftDown = false;
     this._shiftHeld = false;
     this._shiftAsModifier = false;
+    this.touchX = 0;
+    this.touchZ = 0;
 
     this._bind();
   }
@@ -38,6 +40,8 @@ export class InputManager extends EventEmitter {
     window.addEventListener('pointermove', this._onPointerMove);
     window.addEventListener('keydown', this._onKeyDown);
     window.addEventListener('keyup', this._onKeyUp);
+    window.addEventListener('blur', this._onBlur);
+    document.addEventListener('visibilitychange', this._onBlur);
     this.dom.addEventListener('contextmenu', this._onContextMenu);
   }
 
@@ -87,9 +91,26 @@ export class InputManager extends EventEmitter {
 
     this.keys.add(event.code);
 
+    if (
+      event.code === 'KeyW' ||
+      event.code === 'KeyA' ||
+      event.code === 'KeyS' ||
+      event.code === 'KeyD' ||
+      event.code === 'ArrowUp' ||
+      event.code === 'ArrowDown' ||
+      event.code === 'ArrowLeft' ||
+      event.code === 'ArrowRight' ||
+      event.code === 'Space'
+    ) {
+      event.preventDefault();
+    }
+
     switch (event.code) {
       // Combat row is the class loadout (1–6). Q / E still pull the first and
       // last loadout slots — the old linear letters keep the lab extras.
+      case 'Space':
+        this.emit('action', 'dash');
+        break;
       case 'Digit1':
       case 'KeyQ':
         this.emit('action', 'loadout', 0);
@@ -234,6 +255,75 @@ export class InputManager extends EventEmitter {
     }
   };
 
+  _onBlur = () => {
+    this.keys.clear();
+    this._leftDown = false;
+    this._shiftHeld = false;
+    this.touchX = 0;
+    this.touchZ = 0;
+  };
+
+  /**
+   * Camera-relative move intent. W/↑ +forward, S/↓ back, A/← left, D/→ right.
+   * Touch stick and a standard gamepad left-stick/D-pad merge in here.
+   */
+  moveAxis() {
+    let x = 0;
+    let z = 0;
+    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) x -= 1;
+    if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) x += 1;
+    if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) z += 1;
+    if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) z -= 1;
+    x += this.touchX;
+    z += this.touchZ;
+    return this._clampAxis(x, z);
+  }
+
+  sampleMove() {
+    let { x, z } = this.moveAxis();
+    const pads = typeof navigator !== 'undefined' ? navigator.getGamepads?.() ?? [] : [];
+    for (const pad of pads) {
+      if (!pad) continue;
+      const ax = pad.axes[0] || 0;
+      const ay = pad.axes[1] || 0;
+      const mag = Math.hypot(ax, ay);
+      if (mag > 0.18) {
+        const scale = (mag - 0.18) / (1 - 0.18);
+        x += (ax / mag) * scale;
+        z += (-ay / mag) * scale;
+      }
+      if (pad.buttons[12]?.pressed) z += 1;
+      if (pad.buttons[13]?.pressed) z -= 1;
+      if (pad.buttons[14]?.pressed) x -= 1;
+      if (pad.buttons[15]?.pressed) x += 1;
+    }
+    return this._clampAxis(x, z);
+  }
+
+  _clampAxis(x, z) {
+    const mag = Math.hypot(x, z);
+    if (mag > 1) {
+      x /= mag;
+      z /= mag;
+    }
+    return { x, z };
+  }
+
+  setTouch(x = 0, z = 0) {
+    this.touchX = x;
+    this.touchZ = z;
+  }
+
+  setHeld(codes = []) {
+    this.keys = new Set(codes);
+    this.touchX = 0;
+    this.touchZ = 0;
+  }
+
+  isDown(code) {
+    return this.keys.has(code);
+  }
+
   dispose() {
     this.dom.removeEventListener('pointerdown', this._onPointerDown);
     window.removeEventListener('pointerup', this._onPointerUp);
@@ -241,6 +331,8 @@ export class InputManager extends EventEmitter {
     window.removeEventListener('pointermove', this._onPointerMove);
     window.removeEventListener('keydown', this._onKeyDown);
     window.removeEventListener('keyup', this._onKeyUp);
+    window.removeEventListener('blur', this._onBlur);
+    document.removeEventListener('visibilitychange', this._onBlur);
     this.dom.removeEventListener('contextmenu', this._onContextMenu);
     this.clear();
   }
