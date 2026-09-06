@@ -933,6 +933,19 @@
   }
 }
 
+.loader__retry {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.loader__retry .lab-gate__enter,
+.loader__retry .studio-toggle {
+  min-height: 44px;
+  padding: 0 16px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .lab-gate__enter,
   .ability-card {

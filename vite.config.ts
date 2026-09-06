@@ -188,6 +188,9 @@ export default defineConfig(({ command, isPreview }) => ({
     cors: { origin: true },
     hmr: { overlay: false, protocol: "wss", clientPort: 443 },
     headers: { "Cache-Control": "no-store" },
+    warmup: {
+      clientFiles: ["./src/lab/core/App.js", "./src/components/ability-lab.tsx"],
+    },
   },
   preview: {
     host: "127.0.0.1",

@@ -7,6 +7,34 @@ type LabApp = {
   editor: { toggle: () => void };
 };
 
+type LabModule = { App: new (canvas: HTMLCanvasElement, options?: object) => LabApp };
+
+/**
+ * Chrome caches a *failed* dynamic import forever for that URL. After a live
+ * reload drops App.js mid-fetch, `import("@/lab/core/App.js")` keeps throwing
+ * "Failed to fetch dynamically imported module" until we change the URL or
+ * reload the page.
+ */
+async function importLabModule(): Promise<LabModule> {
+  try {
+    return (await import("@/lab/core/App.js")) as LabModule;
+  } catch (error) {
+    if (!import.meta.env.DEV) throw error;
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    return (await import(/* @vite-ignore */ `/src/lab/core/App.js?t=${Date.now()}`)) as LabModule;
+  }
+}
+
+let labModule: Promise<LabModule> | null = null;
+
+function labEngine(): Promise<LabModule> {
+  labModule ??= importLabModule().catch((error) => {
+    labModule = null;
+    throw error;
+  });
+  return labModule;
+}
+
 export function AbilityLab() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const hudRef = useRef<HTMLDivElement>(null);
@@ -15,6 +43,13 @@ export function AbilityLab() {
   const [entered, setEntered] = useState(false);
   const [studio, setStudio] = useState(false);
   const [bootError, setBootError] = useState<string | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
+
+  useEffect(() => {
+    void labEngine().catch(() => {
+      /* preload only — boot() surfaces the error */
+    });
+  }, []);
 
   const boot = useCallback(async () => {
     const canvas = canvasRef.current;
@@ -22,13 +57,25 @@ export function AbilityLab() {
     const loader = loaderRef.current;
     if (!canvas || !hud || !loader) return;
     try {
-      const { App } = await import("@/lab/core/App.js");
+      setBootError(null);
+      const { App } = await labEngine();
+      const existing = (window as unknown as { __grudgeApp?: LabApp }).__grudgeApp;
+      if (existing) {
+        appRef.current = existing;
+        loader.classList.add("is-hidden");
+        return;
+      }
       const app = new App(canvas, { hud, loader }) as LabApp;
       appRef.current = app;
-      (window as unknown as { app: LabApp }).app = app;
+      (window as unknown as { app: LabApp; __grudgeApp: LabApp }).app = app;
+      (window as unknown as { __grudgeApp: LabApp }).__grudgeApp = app;
       await app.load();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to start the lab";
+      const raw = error instanceof Error ? error.message : "Failed to start the lab";
+      const dropped = /failed to fetch dynamically imported module/i.test(raw);
+      const message = dropped
+        ? "The grove engine dropped during a live reload. Hit Retry."
+        : raw;
       setBootError(message);
       console.error("[lab] boot failed", error);
     }
@@ -43,10 +90,14 @@ export function AbilityLab() {
     })();
     return () => {
       cancelled = true;
+      // Keep the WebGL grove across React refresh. Disposing here is what
+      // leaves the canvas dead and the next import() stuck on a failed module.
+      if (import.meta.hot) return;
       appRef.current?.dispose();
       appRef.current = null;
+      delete (window as unknown as { __grudgeApp?: LabApp }).__grudgeApp;
     };
-  }, [entered, boot]);
+  }, [entered, boot, retryTick]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -67,6 +118,19 @@ export function AbilityLab() {
     };
   }, []);
 
+  const retry = () => {
+    labModule = null;
+    delete (window as unknown as { __grudgeApp?: LabApp }).__grudgeApp;
+    try {
+      appRef.current?.dispose();
+    } catch {
+      /* already torn down */
+    }
+    appRef.current = null;
+    setBootError(null);
+    setRetryTick((n) => n + 1);
+  };
+
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-bg text-fg">
       <canvas id="viewport" ref={canvasRef} />
@@ -82,6 +146,16 @@ export function AbilityLab() {
           <p className="loader__status" id="loader-status" data-loader-status>
             {bootError ?? "Compiling the crowns…"}
           </p>
+          {bootError ? (
+            <div className="loader__retry">
+              <button type="button" className="lab-gate__enter" onClick={retry}>
+                Retry
+              </button>
+              <button type="button" className="studio-toggle" onClick={() => window.location.reload()}>
+                Reload
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -128,9 +202,12 @@ export function AbilityLab() {
             <p className="lab-gate__kicker">Ability Lab</p>
             <p className="lab-gate__lead">
               Crusade, Fabled, Legion. Six race kits, eight Warlord classes.
-              1-2-3 is that weapon's own combo — not a shared 2H take. Pack is right-click to wear.
+              1–3 is that weapon's own combo — not a shared 2H take. Pack is right-click to wear.
             </p>
             <div className="lab-gate__keys">
+              <div>
+                <b>WASD</b> walk the grove
+              </div>
               <div>
                 <b>1–3</b> weapon combo
               </div>
@@ -150,7 +227,7 @@ export function AbilityLab() {
             <button type="button" className="lab-gate__enter" onClick={() => setEntered(true)}>
               Enter the lab
             </button>
-            <p className="lab-gate__hint">Aim with the mouse. Left click to cast. Right drag to orbit.</p>
+            <p className="lab-gate__hint">WASD to walk. Aim with the mouse. Left click to cast. Right drag to orbit.</p>
           </div>
         </div>
       )}
