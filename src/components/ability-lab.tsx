@@ -42,7 +42,7 @@ function loadAppCtor(): Promise<AppCtor> {
   const existing = (window as unknown as { GrudgeLabApp?: AppCtor }).GrudgeLabApp;
   if (existing) return Promise.resolve(existing);
 
-  if (!import.meta.env.DEV) {
+  if (!import.meta.hot) {
     return import("@/lab/core/App.js").then((mod) => publishCtor(mod.App as unknown as AppCtor));
   }
 
