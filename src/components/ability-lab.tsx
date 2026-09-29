@@ -19,13 +19,32 @@ function engineSrc() {
   }
 }
 
+function publishCtor(ctor: AppCtor): AppCtor {
+  (window as unknown as { GrudgeLabApp?: AppCtor }).GrudgeLabApp = ctor;
+  return ctor;
+}
+
 /**
- * Load the grove constructor without `import()`. Chrome caches a failed
- * dynamic import for the life of the tab; a cache-busted module script does not.
+ * Production: a normal dynamic `import()` so Vite/Rollup bundles the engine
+ * (core/App.js + three.js + its whole module graph) into hashed chunks.
+ *
+ * `new URL("./file.js", import.meta.url)` is only an *asset* reference — Vite
+ * does not bundle a JS file's imports that way. In the production build the
+ * small entry file was inlined as a `data:` URL whose relative
+ * `./core/App.js` import can never resolve (and appending `?t=` corrupts the
+ * data URL), so the grove never booted on deploys.
+ *
+ * Dev: keep the cache-busted module script. Chrome caches a failed dynamic
+ * import for the life of the tab during live reload; a fresh `?t=` script
+ * URL served by the Vite dev server does not have that problem.
  */
 function loadAppCtor(): Promise<AppCtor> {
   const existing = (window as unknown as { GrudgeLabApp?: AppCtor }).GrudgeLabApp;
   if (existing) return Promise.resolve(existing);
+
+  if (!import.meta.env.DEV) {
+    return import("@/lab/core/App.js").then((mod) => publishCtor(mod.App as unknown as AppCtor));
+  }
 
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
